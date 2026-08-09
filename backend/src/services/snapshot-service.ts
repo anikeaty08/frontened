@@ -12,7 +12,7 @@ import {
   type ReserveSnapshot,
   type SnapshotEvent,
 } from "../domain/types.js";
-import type { SnapshotRepository } from "../persistence/snapshot-repository.js";
+import { SnapshotRevisionConflictError, type SnapshotRepository } from "../persistence/snapshot-repository.js";
 import type { AnchorPayload, AnchorService } from "./anchor-service.js";
 
 export interface CreateSnapshotCommand {
@@ -138,6 +138,7 @@ export class SnapshotService {
     };
     const snapshot: ReserveSnapshot = {
       id,
+      revision: 0,
       idempotencyKeyDigest,
       requestFingerprint,
       schemaVersion: SNAPSHOT_SCHEMA_VERSION,
@@ -189,7 +190,7 @@ export class SnapshotService {
 
   public async attest(principal: Principal, snapshotId: string): Promise<PublicSnapshot> {
     roleRequired(principal, "ATTESTER");
-    const snapshot = await this.requireSnapshot(snapshotId);
+    let snapshot = await this.requireSnapshot(snapshotId);
     if (principal.id !== snapshot.attesterId) throw forbidden("Only the assigned attester may attest this snapshot");
     if (snapshot.status !== "PENDING_ATTESTATION") throw invalidState("Only pending snapshots may be attested");
     if (this.currentStatus(snapshot) === "EXPIRED") throw invalidState("An expired snapshot cannot be attested");
@@ -204,12 +205,15 @@ export class SnapshotService {
     });
     snapshot.attestedAt = transaction.recordedAt;
     snapshot.signatures.attester = this.config.attesterSigner.sign(this.attesterPayload(snapshot));
-    await this.repository.update(snapshot, this.event(snapshot.id, "ATTESTED", principal.id, { result: snapshot.status, transactionId: transaction.transactionId ?? "development" }));
+    snapshot = await this.repository.update(
+      snapshot,
+      this.event(snapshot.id, "ATTESTED", principal.id, { result: snapshot.status, transactionId: transaction.transactionId ?? "development" }),
+    );
     return this.toPublic(snapshot);
   }
 
   public async revoke(principal: Principal, snapshotId: string, reason: string): Promise<PublicSnapshot> {
-    const snapshot = await this.requireSnapshot(snapshotId);
+    let snapshot = await this.requireSnapshot(snapshotId);
     const isIssuer = principal.roles.includes("ISSUER") && principal.id === snapshot.issuerId;
     if (!isIssuer) throw forbidden("Only the issuer may revoke a snapshot");
     if (snapshot.revokedAt) throw invalidState("A snapshot is already revoked");
@@ -224,7 +228,10 @@ export class SnapshotService {
     snapshot.revokedAt = transaction.recordedAt;
     snapshot.revokedBy = principal.id;
     snapshot.revocationReason = reason;
-    await this.repository.update(snapshot, this.event(snapshot.id, "REVOKED", principal.id, { transactionId: transaction.transactionId ?? "development" }));
+    snapshot = await this.repository.update(
+      snapshot,
+      this.event(snapshot.id, "REVOKED", principal.id, { transactionId: transaction.transactionId ?? "development" }),
+    );
     return this.toPublic(snapshot);
   }
 
@@ -376,20 +383,61 @@ export class SnapshotService {
 
   private async ensureDeployment(snapshot: ReserveSnapshot): Promise<ReserveSnapshot> {
     if (snapshot.anchored.status === "CONFIRMED") return snapshot;
+    if (snapshot.anchored.status === "DEPLOYING") {
+      throw invalidState("Midnight deployment is already in progress or needs operator reconciliation");
+    }
+
+    let deploying: ReserveSnapshot;
     try {
-      snapshot.anchored = await this.anchorService.deploy(this.anchorPayload(snapshot));
-      await this.repository.update(snapshot, this.event(snapshot.id, "DEPLOYED", snapshot.issuerId, { transactionId: snapshot.anchored.transactionId ?? "development" }));
-      return snapshot;
+      deploying = await this.repository.update(
+        {
+          ...snapshot,
+          anchored: {
+            ...snapshot.anchored,
+            status: "DEPLOYING",
+            failure: null,
+            recordedAt: new Date().toISOString(),
+          },
+        },
+        this.event(snapshot.id, "DEPLOYMENT_STARTED", snapshot.issuerId, {}),
+      );
     } catch (error) {
-      snapshot.anchored = {
-        ...snapshot.anchored,
-        status: "FAILED",
-        failure: "MIDNIGHT_DEPLOYMENT_FAILED",
-        recordedAt: new Date().toISOString(),
-      };
-      await this.repository.update(snapshot, this.event(snapshot.id, "DEPLOYMENT_FAILED", snapshot.issuerId, {}));
+      if (error instanceof SnapshotRevisionConflictError) {
+        const current = await this.requireSnapshot(snapshot.id);
+        if (current.anchored.status === "CONFIRMED") return current;
+        if (current.anchored.status === "DEPLOYING") {
+          throw invalidState("Midnight deployment is already in progress or needs operator reconciliation");
+        }
+      }
       throw error;
     }
+
+    let anchored;
+    try {
+      anchored = await this.anchorService.deploy(this.anchorPayload(deploying));
+    } catch (error) {
+      // Network errors can occur after submission. Retain the deployment claim and
+      // require reconciliation instead of risking a duplicate contract deployment.
+      await this.repository.update(
+        {
+          ...deploying,
+          anchored: {
+            ...deploying.anchored,
+            failure: "MIDNIGHT_DEPLOYMENT_UNCERTAIN",
+            recordedAt: new Date().toISOString(),
+          },
+        },
+        this.event(deploying.id, "DEPLOYMENT_UNCERTAIN", deploying.issuerId, {}),
+      );
+      throw error;
+    }
+
+    // If this write fails after successful submission, DEPLOYING remains durable
+    // and prevents an automatic duplicate deployment.
+    return this.repository.update(
+      { ...deploying, anchored },
+      this.event(deploying.id, "DEPLOYED", deploying.issuerId, { transactionId: anchored.transactionId ?? "development" }),
+    );
   }
 
   private requireConfirmedDeployment(snapshot: ReserveSnapshot): void {

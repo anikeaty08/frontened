@@ -5,8 +5,6 @@ import { fileURLToPath } from "node:url";
 import { Contract, ledger, type Witnesses } from "../contracts/managed/aqua-reserve-snapshot/contract/index.js";
 
 export interface AquaPrivateState {
-  issuerAuthorizationSecret: Uint8Array;
-  attesterAuthorizationSecret: Uint8Array;
   liabilityTotal: bigint;
   liabilityEvidenceOpening: Uint8Array;
   reserveTotal: bigint;
@@ -23,6 +21,12 @@ const pad32 = (value: string): Uint8Array => {
   return padded;
 };
 
+export const authorizationSecretFromEnvironment = (name: "AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX" | "AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX"): Uint8Array => {
+  const value = process.env[name] ?? "";
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error(`${name} must be a 32-byte hexadecimal value`);
+  return Uint8Array.from(Buffer.from(value, "hex"));
+};
+
 export const authorizationCommitment = (domain: string, secret: Uint8Array): Uint8Array =>
   persistentHash(vector2Bytes32, [pad32(domain), secret]);
 
@@ -30,8 +34,8 @@ export const totalEvidenceCommitment = (publicEvidence: Uint8Array, total: bigin
   persistentCommit(vector2Bytes32, [publicEvidence, convertFieldToBytes(32, total, "Uint<64>")], opening);
 
 const witnesses: Witnesses<AquaPrivateState> = {
-  issuerAuthorizationSecret: ({ privateState }) => [privateState, privateState.issuerAuthorizationSecret],
-  attesterAuthorizationSecret: ({ privateState }) => [privateState, privateState.attesterAuthorizationSecret],
+  issuerAuthorizationSecret: ({ privateState }) => [privateState, authorizationSecretFromEnvironment("AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX")],
+  attesterAuthorizationSecret: ({ privateState }) => [privateState, authorizationSecretFromEnvironment("AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX")],
   liabilityTotal: ({ privateState }) => [privateState, privateState.liabilityTotal],
   liabilityEvidenceOpening: ({ privateState }) => [privateState, privateState.liabilityEvidenceOpening],
   reserveTotal: ({ privateState }) => [privateState, privateState.reserveTotal],

@@ -47,6 +47,8 @@ The AWS role needs `rds-db:connect`; the database principal needs the `rds_iam` 
 
 Copy `midnight/.env.example` to the ignored `midnight/.env` and set the wallet mnemonic or seed, the issuer and attester authorisation secrets, and an encrypted private-state password. Start the local proof server with `npm --prefix midnight run proof:up`, then compile with `npm --prefix midnight run compile:contract`. The API invokes `npm run lifecycle -- deploy` in that worker for every newly published snapshot.
 
+The authorization secrets remain runtime-only worker environment values. The encrypted Midnight private-state store retains the coverage witnesses and commitment openings required for later proof calls, but not issuer/attester authorization secrets. Keep deployment, attestation, and revocation operations in separately scoped runtime environments when moving beyond the Phase 1 demo roles.
+
 Persist a release manifest in the deployment secret store containing:
 
 - source hash and compiler version;

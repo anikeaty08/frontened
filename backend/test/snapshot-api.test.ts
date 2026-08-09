@@ -139,6 +139,61 @@ describe("Aqua Reserve Phase 1 API", () => {
     expect(calls).toEqual(["deploy", "attest", "revoke", "read"]);
   });
 
+  it("claims a direct deployment before the chain call so retries cannot deploy twice", async () => {
+    let releaseDeployment: (() => void) | undefined;
+    const deploymentStarted = new Promise<void>((resolve) => {
+      releaseDeployment = resolve;
+    });
+    let deploymentCount = 0;
+    const direct: AnchorService = {
+      prepare: (payload) => ({
+        mode: "MIDNIGHT_PREPROD",
+        status: "PENDING",
+        contractAddress: null,
+        commitment: lifecycleCommitment(payload),
+        transactionId: null,
+        recordedAt: "2026-08-09T00:00:00.000Z",
+        failure: null,
+        proofCommitments: null,
+      }),
+      deploy: async (payload) => {
+        deploymentCount += 1;
+        await deploymentStarted;
+        return {
+          mode: "MIDNIGHT_PREPROD",
+          status: "CONFIRMED",
+          contractAddress: "midnight-contract-race-safe",
+          commitment: lifecycleCommitment(payload),
+          transactionId: "deploy-tx-race-safe",
+          recordedAt: "2026-08-09T00:00:01.000Z",
+          failure: null,
+          proofCommitments: {
+            liabilityEvidenceCommitment: "d".repeat(64),
+            reserveTotalCommitment: "e".repeat(64),
+          },
+        };
+      },
+      attest: async () => ({ transactionId: "attest-tx", recordedAt: "2026-08-09T00:00:02.000Z" }),
+      revoke: async () => ({ transactionId: "revoke-tx", recordedAt: "2026-08-09T00:00:03.000Z" }),
+      read: async () => { throw new Error("Not needed for this race test"); },
+    };
+    const config = loadConfig("test");
+    const app = await buildApp({ config, repository: new InMemorySnapshotRepository(), anchorService: direct });
+    apps.push(app);
+    const headers = { authorization: "Bearer issuer-demo-token", "idempotency-key": "deployment-race-key-0001" };
+
+    const first = app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() });
+    while (deploymentCount === 0) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    const retry = await app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() });
+    expect(retry.statusCode).toBe(409);
+    expect(deploymentCount).toBe(1);
+
+    releaseDeployment?.();
+    expect((await first).statusCode).toBe(201);
+  });
+
   it("permits only the configured web application origin", async () => {
     const app = await makeApp();
     const preflight = await app.inject({

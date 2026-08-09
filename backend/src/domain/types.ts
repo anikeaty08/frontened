@@ -49,7 +49,7 @@ export interface EncryptedReceipt {
 
 export interface AnchorRecord {
   mode: "DEVELOPMENT" | "MIDNIGHT_PREPROD";
-  status: "PENDING" | "CONFIRMED" | "FAILED";
+  status: "PENDING" | "DEPLOYING" | "CONFIRMED" | "FAILED";
   contractAddress: string | null;
   commitment: string;
   transactionId: string | null;
@@ -84,6 +84,8 @@ export interface SnapshotSignatures {
 
 export interface ReserveSnapshot {
   id: string;
+  /** Monotonic optimistic-concurrency revision; omitted from public responses. */
+  revision: number;
   /** Internal-only HMAC digests. They are intentionally omitted from PublicSnapshot. */
   idempotencyKeyDigest: string;
   requestFingerprint: string;
@@ -144,7 +146,7 @@ export interface PublicSnapshot {
 export interface SnapshotEvent {
   id: string;
   snapshotId: string;
-  type: "CREATED" | "DEPLOYED" | "DEPLOYMENT_FAILED" | "ATTESTED" | "REVOKED";
+  type: "CREATED" | "DEPLOYMENT_STARTED" | "DEPLOYED" | "DEPLOYMENT_UNCERTAIN" | "ATTESTED" | "REVOKED";
   actorId: string;
   occurredAt: string;
   metadata: Record<string, string>;

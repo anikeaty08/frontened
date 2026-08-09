@@ -9,7 +9,14 @@ import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-p
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type { EnvironmentConfiguration } from "@midnight-ntwrk/testkit-js";
 import * as Rx from "rxjs";
-import { authorizationCommitment, CompiledAquaReserveContract, ledger, totalEvidenceCommitment, type AquaPrivateState } from "./contract.js";
+import {
+  authorizationCommitment,
+  authorizationSecretFromEnvironment,
+  CompiledAquaReserveContract,
+  ledger,
+  totalEvidenceCommitment,
+  type AquaPrivateState,
+} from "./contract.js";
 import { getNetworkConfig } from "./network.js";
 import { buildProviders } from "./providers.js";
 import { AquaWalletProvider } from "./wallet.js";
@@ -66,14 +73,12 @@ const parseUint64 = (value: string, name: string): bigint => {
   return parsed;
 };
 const privateState = (payload: DeployInput): AquaPrivateState => {
-  const issuerAuthorizationSecret = toBytes32(process.env.AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX ?? "", "AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX");
+  const issuerAuthorizationSecret = authorizationSecretFromEnvironment("AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX");
   const deriveOpening = (domain: string): Uint8Array =>
     Uint8Array.from(createHmac("sha256", issuerAuthorizationSecret)
       .update(`${domain}|${payload.snapshotId}|${payload.membershipRoot}|${payload.reserveEvidenceCommitment}`)
       .digest());
   return {
-    issuerAuthorizationSecret,
-    attesterAuthorizationSecret: toBytes32(process.env.AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX ?? "", "AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX"),
     liabilityTotal: parseUint64(payload.liabilityTotalBaseUnits, "liabilityTotalBaseUnits"),
     liabilityEvidenceOpening: deriveOpening("aqua:liability-evidence-opening:v1"),
     reserveTotal: parseUint64(payload.reserveTotalBaseUnits, "reserveTotalBaseUnits"),
@@ -135,6 +140,8 @@ const withPublicData = async <T>(action: (provider: ReturnType<typeof indexerPub
 
 const deploy = async (payload: DeployInput): Promise<Record<string, string>> => {
   const secrets = privateState(payload);
+  const issuerAuthorizationSecret = authorizationSecretFromEnvironment("AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX");
+  const attesterAuthorizationSecret = authorizationSecretFromEnvironment("AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX");
   const liabilityEvidenceCommitment = totalEvidenceCommitment(toBytes32(payload.membershipRoot, "membershipRoot"), secrets.liabilityTotal, secrets.liabilityEvidenceOpening);
   const reserveTotalCommitment = totalEvidenceCommitment(toBytes32(payload.reserveEvidenceCommitment, "reserveEvidenceCommitment"), secrets.reserveTotal, secrets.reserveTotalOpening);
   return withChain(payload.snapshotId, async (providers) => {
@@ -144,8 +151,8 @@ const deploy = async (payload: DeployInput): Promise<Record<string, string>> => 
       initialPrivateState: secrets,
       args: [
         snapshotIdentifier(payload.snapshotId),
-        authorizationCommitment("aqua:issuer-authorisation:v1", secrets.issuerAuthorizationSecret),
-        authorizationCommitment("aqua:attester-authorisation:v1", secrets.attesterAuthorizationSecret),
+        authorizationCommitment("aqua:issuer-authorisation:v1", issuerAuthorizationSecret),
+        authorizationCommitment("aqua:attester-authorisation:v1", attesterAuthorizationSecret),
         toBytes32(payload.scopeManifestHash, "scopeManifestHash"),
         toBytes32(payload.liabilityCommitment, "liabilityCommitment"),
         toBytes32(payload.membershipRoot, "membershipRoot"),
