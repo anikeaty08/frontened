@@ -27,7 +27,7 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 // Node does not provide the browser WebSocket global used by GraphQL subscriptions.
 globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
 
-type DeployInput = {
+export type DeployInput = {
   snapshotId: string;
   scopeManifestHash: string;
   liabilityCommitment: string;
@@ -38,9 +38,10 @@ type DeployInput = {
   coverageEvidenceCommitment: string;
   expiresAt: string;
 };
-type AttestInput = { snapshotId: string; contractAddress: string; attestedAt?: string };
-type RevokeInput = { snapshotId: string; contractAddress: string; reason: string };
-type InspectInput = { contractAddress: string };
+export type AttestInput = { snapshotId: string; contractAddress: string; attestedAt?: string };
+export type RevokeInput = { snapshotId: string; contractAddress: string; reason: string };
+export type InspectInput = { contractAddress: string };
+export type LifecycleCommand = "deploy" | "attest" | "revoke" | "inspect" | "status";
 
 const toBytes32 = (value: string, name: string): Uint8Array => {
   if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error(`${name} must be a 32-byte hexadecimal value`);
@@ -93,24 +94,94 @@ const readJson = async <T>(): Promise<T> => {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
 };
 
+const timeoutSetting = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) throw new Error(`${name} must be a positive whole number of milliseconds`);
+  return Number(raw);
+};
+
+const within = async <T>(stage: string, timeoutMs: number, operation: Promise<T>): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${stage} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 const syncWallet = async (wallet: AquaWalletProvider): Promise<void> => {
-  const complete = (value: unknown): boolean => Boolean(value && typeof value === "object" && typeof (value as { isStrictlyComplete?: unknown }).isStrictlyComplete === "function" && (value as { isStrictlyComplete: () => boolean }).isStrictlyComplete());
+  const allowedGap = BigInt(timeoutSetting("MIDNIGHT_ALLOWED_SYNC_GAP", 0));
+  const checkpointIntervalMs = timeoutSetting("MIDNIGHT_WALLET_CHECKPOINT_MS", 30_000);
+  type Progress = {
+    isConnected?: boolean;
+    appliedIndex?: bigint;
+    highestRelevantWalletIndex?: bigint;
+    highestIndex?: bigint;
+    appliedId?: bigint;
+    highestTransactionId?: bigint;
+    isCompleteWithin?: (gap: bigint) => boolean;
+  };
+  const complete = (value: unknown): boolean => {
+    const progress = value as Progress | undefined;
+    return Boolean(progress && typeof progress.isCompleteWithin === "function" && progress.isCompleteWithin(allowedGap));
+  };
+  const describe = (value: unknown): string => {
+    const progress = value as Progress;
+    const entry = (name: keyof Progress): string => typeof progress?.[name] === "bigint" ? `${name}=${progress[name]}` : "";
+    return [
+      `connected=${Boolean(progress?.isConnected)}`,
+      entry("appliedIndex"),
+      entry("highestRelevantWalletIndex"),
+      entry("highestIndex"),
+      entry("appliedId"),
+      entry("highestTransactionId"),
+    ].filter(Boolean).join(" ");
+  };
   let previousProgress = "";
+  let lastReportedAt = 0;
+  let lastCheckpointAt = 0;
+  let checkpointFailure: Error | undefined;
+  let checkpoint = Promise.resolve();
   await Rx.firstValueFrom(wallet.wallet.state().pipe(
     Rx.tap((state) => {
-      const progress = `shielded=${complete(state.shielded.state.progress)} dust=${complete(state.dust.state.progress)} unshielded=${complete(state.unshielded.progress)}`;
-      if (progress !== previousProgress) {
+      if (checkpointFailure) throw checkpointFailure;
+      const progress = `allowedGap=${allowedGap} shielded=${complete(state.shielded.state.progress)} (${describe(state.shielded.state.progress)}) dust=${complete(state.dust.state.progress)} (${describe(state.dust.state.progress)}) unshielded=${complete(state.unshielded.progress)} (${describe(state.unshielded.progress)})`;
+      const now = Date.now();
+      if (progress !== previousProgress && now - lastReportedAt >= 5_000) {
         console.error(`[wallet sync] ${progress}`);
-        previousProgress = progress;
+        lastReportedAt = now;
+      }
+      previousProgress = progress;
+      if (now - lastCheckpointAt >= checkpointIntervalMs) {
+        lastCheckpointAt = now;
+        checkpoint = checkpoint.then(async () => {
+          await wallet.saveCheckpoint();
+          console.error("[wallet checkpoint] saved");
+        }).catch((cause: unknown) => {
+          checkpointFailure = cause instanceof Error ? cause : new Error(String(cause));
+        });
       }
     }),
     Rx.filter((state) => complete(state.shielded.state.progress) && complete(state.dust.state.progress) && complete(state.unshielded.progress)),
-    Rx.timeout({ first: Number(process.env.MIDNIGHT_SYNC_TIMEOUT_MS ?? 3_600_000) }),
+    // A timeout on every emission prevents a subscribed-but-stalled indexer from
+    // leaving an operator waiting forever after the first incomplete state.
+    Rx.timeout({ each: timeoutSetting("MIDNIGHT_SYNC_TIMEOUT_MS", 120_000) }),
   ));
+  await checkpoint;
+  if (checkpointFailure) throw checkpointFailure;
 };
 
-const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<typeof buildProviders>) => Promise<T>): Promise<T> => {
-  const config = getNetworkConfig();
+type WalletSession = { wallet: AquaWalletProvider; config: ReturnType<typeof getNetworkConfig> };
+let warmSession: Promise<WalletSession> | undefined;
+let warmWallet: AquaWalletProvider | undefined;
+
+const startWalletSession = async (config: ReturnType<typeof getNetworkConfig>): Promise<WalletSession> => {
   setNetworkId(config.networkId);
   const environment: EnvironmentConfiguration = {
     walletNetworkId: config.networkId,
@@ -123,11 +194,50 @@ const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<t
     proofServer: config.proofServer,
   };
   const wallet = await AquaWalletProvider.fromEnvironment(environment);
-  await wallet.start();
+  if (process.env.MIDNIGHT_WALLET_SESSION === "warm") warmWallet = wallet;
+  const startupTimeoutMs = timeoutSetting("MIDNIGHT_WALLET_START_TIMEOUT_MS", 120_000);
+  console.error(`[wallet] starting ${config.networkId}; timeout=${startupTimeoutMs}ms`);
+  await within("Midnight wallet startup", startupTimeoutMs, wallet.start());
+  console.error("[wallet] started; waiting for shielded, unshielded, and DUST sync");
+  await syncWallet(wallet);
+  console.error("[wallet] synchronization complete");
+  return { wallet, config };
+};
+
+export const stopWarmWalletSession = async (): Promise<void> => {
+  const wallet = warmWallet;
+  warmSession = undefined;
+  warmWallet = undefined;
+  if (!wallet) return;
   try {
-    await syncWallet(wallet);
+    console.error("[wallet] stopping warm session");
+    await wallet.saveCheckpoint();
+    await wallet.stop();
+  } catch {
+    // A failed startup has no usable wallet to stop.
+  }
+};
+
+export const checkpointWarmWalletSession = async (): Promise<void> => {
+  if (!warmWallet) return;
+  await warmWallet.saveCheckpoint();
+  console.error("[wallet checkpoint] saved during recovery");
+};
+
+const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<typeof buildProviders>) => Promise<T>): Promise<T> => {
+  const config = getNetworkConfig();
+  if (process.env.MIDNIGHT_WALLET_SESSION === "warm") {
+    warmSession ??= startWalletSession(config);
+    const session = await warmSession;
+    if (session.config.networkId !== config.networkId) throw new Error("Warm Midnight wallet network differs from requested network");
+    return action(buildProviders(session.wallet, snapshotId, config));
+  }
+  const { wallet } = await startWalletSession(config);
+  try {
     return await action(buildProviders(wallet, snapshotId, config));
   } finally {
+    console.error("[wallet] stopping");
+    await wallet.saveCheckpoint();
     await wallet.stop();
   }
 };
@@ -240,15 +350,28 @@ const status = async (): Promise<Record<string, string>> =>
     wallet: "synced",
   }));
 
-const command = process.argv[2];
-try {
-  if (command === "deploy") console.log(JSON.stringify(await deploy(await readJson<DeployInput>())));
-  else if (command === "attest") console.log(JSON.stringify(await attest(await readJson<AttestInput>())));
-  else if (command === "revoke") console.log(JSON.stringify(await revoke(await readJson<RevokeInput>())));
-  else if (command === "inspect") console.log(JSON.stringify(await inspect(await readJson<InspectInput>())));
-  else if (command === "status") console.log(JSON.stringify(await status()));
-  else throw new Error("Usage: npm run lifecycle -- <status|deploy|attest|revoke|inspect> < payload.json");
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
+export const executeLifecycle = async (
+  command: LifecycleCommand,
+  payload?: DeployInput | AttestInput | RevokeInput | InspectInput,
+): Promise<Record<string, string>> => {
+  if (command === "deploy") return deploy(payload as DeployInput);
+  if (command === "attest") return attest(payload as AttestInput);
+  if (command === "revoke") return revoke(payload as RevokeInput);
+  if (command === "inspect") return inspect(payload as InspectInput);
+  return status();
+};
+
+const isCliEntrypoint = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isCliEntrypoint) {
+  const command = process.argv[2] as LifecycleCommand | undefined;
+  try {
+    if (!command || !["deploy", "attest", "revoke", "inspect", "status"].includes(command)) {
+      throw new Error("Usage: npm run lifecycle -- <status|deploy|attest|revoke|inspect> < payload.json");
+    }
+    const payload = command === "status" ? undefined : await readJson<DeployInput | AttestInput | RevokeInput | InspectInput>();
+    console.log(JSON.stringify(await executeLifecycle(command, payload)));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

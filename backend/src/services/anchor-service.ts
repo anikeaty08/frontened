@@ -81,35 +81,88 @@ export interface LifecycleRunner {
 }
 
 export class NodeLifecycleRunner implements LifecycleRunner {
+  private daemon: ReturnType<typeof spawn> | undefined;
+  private nextRequestId = 1;
+  private stdoutRemainder = "";
+  private stderrTail = "";
+  private readonly pending = new Map<number, { resolve: (value: Record<string, string>) => void; reject: (reason: Error) => void }>();
+
   public constructor(private readonly workerDirectory: string) {}
 
-  public async run(command: "deploy" | "attest" | "revoke" | "inspect", payload: AnchorPayload | AttestPayload | RevokePayload | { contractAddress: string }): Promise<Record<string, string>> {
-    return new Promise((resolve, reject) => {
-      const executable = process.platform === "win32" ? "npm.cmd" : "npm";
-      const child = spawn(executable, ["run", "lifecycle", "--", command], {
-        cwd: this.workerDirectory,
-        env: process.env,
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      });
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-      child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-      child.once("error", reject);
-      child.once("close", (code) => {
-        const output = Buffer.concat(stdout).toString("utf8").trim();
-        const error = Buffer.concat(stderr).toString("utf8").trim().slice(-4_000);
-        if (code !== 0) return reject(new Error(`Midnight lifecycle ${command} failed${error ? `: ${error}` : ""}`));
-        try {
-          const parsed: unknown = JSON.parse(output);
-          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Lifecycle command returned a non-object payload");
-          return resolve(parsed as Record<string, string>);
-        } catch (cause) {
-          return reject(cause instanceof Error ? cause : new Error("Lifecycle command returned invalid JSON"));
+  private rejectPending(reason: Error): void {
+    for (const request of this.pending.values()) request.reject(reason);
+    this.pending.clear();
+  }
+
+  private handleOutput(chunk: Buffer): void {
+    this.stdoutRemainder += chunk.toString("utf8");
+    const lines = this.stdoutRemainder.split(/\r?\n/);
+    this.stdoutRemainder = lines.pop() ?? "";
+    for (const line of lines) {
+      try {
+        const response: unknown = JSON.parse(line);
+        if (!response || typeof response !== "object" || Array.isArray(response)) continue;
+        const { id, ok, result, error } = response as { id?: unknown; ok?: unknown; result?: unknown; error?: unknown };
+        if (!Number.isSafeInteger(id) || typeof ok !== "boolean") continue;
+        const request = this.pending.get(id as number);
+        if (!request) continue;
+        this.pending.delete(id as number);
+        if (!ok) {
+          request.reject(new Error(`Midnight lifecycle failed: ${typeof error === "string" ? error : "unknown daemon error"}`));
+          continue;
         }
+        if (!result || typeof result !== "object" || Array.isArray(result)) {
+          request.reject(new Error("Midnight lifecycle daemon returned an invalid result"));
+          continue;
+        }
+        request.resolve(result as Record<string, string>);
+      } catch {
+        // Dependency logs are allowed on stdout; only protocol-shaped messages are consumed.
+      }
+    }
+  }
+
+  private ensureDaemon(): ReturnType<typeof spawn> {
+    if (this.daemon && !this.daemon.killed && this.daemon.exitCode === null) return this.daemon;
+    const windows = process.platform === "win32";
+    const executable = windows ? (process.env.ComSpec ?? "cmd.exe") : "npm";
+    const args = windows ? ["/d", "/s", "/c", "npm run lifecycle:daemon"] : ["run", "lifecycle:daemon"];
+    const child = spawn(executable, args, {
+      cwd: this.workerDirectory,
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    this.daemon = child;
+    child.stdout.on("data", (chunk: Buffer) => this.handleOutput(chunk));
+    child.stderr.on("data", (chunk: Buffer) => {
+      const output = chunk.toString("utf8");
+      this.stderrTail = `${this.stderrTail}${output}`.slice(-4_000);
+      process.stderr.write(`[midnight-worker] ${output}`);
+    });
+    child.once("error", (cause) => {
+      this.daemon = undefined;
+      this.rejectPending(new Error(`Midnight lifecycle daemon failed to start: ${cause.message}`));
+    });
+    child.once("close", (code) => {
+      this.daemon = undefined;
+      this.rejectPending(new Error(`Midnight lifecycle daemon stopped (code ${code ?? "unknown"})${this.stderrTail ? `: ${this.stderrTail.trim()}` : ""}`));
+    });
+    return child;
+  }
+
+  public async run(command: "deploy" | "attest" | "revoke" | "inspect", payload: AnchorPayload | AttestPayload | RevokePayload | { contractAddress: string }): Promise<Record<string, string>> {
+    const child = this.ensureDaemon();
+    const id = this.nextRequestId++;
+    return new Promise((resolve, reject) => {
+      if (!child.stdin) return reject(new Error("Midnight lifecycle daemon does not have a writable input channel"));
+      this.pending.set(id, { resolve, reject });
+      child.stdin.write(`${JSON.stringify({ id, command, payload })}\n`, (error) => {
+        if (!error) return;
+        const request = this.pending.get(id);
+        this.pending.delete(id);
+        request?.reject(new Error(`Midnight lifecycle daemon request failed: ${error.message}`));
       });
-      child.stdin.end(JSON.stringify(payload));
     });
   }
 }

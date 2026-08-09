@@ -10,6 +10,7 @@
     "check": "tsc --noEmit",
     "compile:contract": "powershell -ExecutionPolicy Bypass -File ./scripts/compile-contract.ps1",
     "lifecycle": "tsx src/cli.ts",
+    "lifecycle:daemon": "tsx src/daemon.ts",
     "proof:up": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/proof-server.ps1 up",
     "proof:down": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/proof-server.ps1 down",
     "test": "vitest run"
