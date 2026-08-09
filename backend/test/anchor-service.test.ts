@@ -9,7 +9,10 @@ const payload = {
   snapshotId: "e51e14e4-38bf-537f-9074-3ffa2b7b249f",
   scopeManifestHash: "a".repeat(64),
   liabilityCommitment: "b".repeat(64),
+  membershipRoot: "c".repeat(64),
+  liabilityTotalBaseUnits: "3000000",
   reserveEvidenceCommitment: "c".repeat(64),
+  reserveTotalBaseUnits: "4000000",
   coverageEvidenceCommitment: "d".repeat(64),
   expiresAt: "2030-08-08T12:00:00.000Z",
 };
@@ -26,6 +29,8 @@ describe("Midnight direct lifecycle adapter", () => {
       transactionId: "midnight-tx-123",
       recordedAt: "2026-08-09T00:00:00.000Z",
       commitment: lifecycleCommitment(payload),
+      liabilityEvidenceCommitment: "e".repeat(64),
+      reserveTotalCommitment: "f".repeat(64),
     }));
 
     expect(service.prepare(payload)).toMatchObject({ mode: "MIDNIGHT_PREPROD", status: "PENDING", contractAddress: null });

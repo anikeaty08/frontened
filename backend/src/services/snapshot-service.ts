@@ -48,7 +48,11 @@ const parseUnits = (value: string, fieldName: string): bigint => {
   if (!/^(0|[1-9]\d*)$/.test(value)) {
     throw validation(`${fieldName} must be a non-negative integer base-unit string`);
   }
-  return BigInt(value);
+  const units = BigInt(value);
+  if (units > 18_446_744_073_709_551_615n) {
+    throw validation(`${fieldName} must fit in the Phase 1 Uint<64> proof range`);
+  }
+  return units;
 };
 
 const isIsoTimestamp = (value: string): boolean => !Number.isNaN(Date.parse(value));
@@ -107,7 +111,10 @@ export class SnapshotService {
       snapshotId: id,
       scopeManifestHash,
       liabilityCommitment,
+      membershipRoot: tree.root,
+      liabilityTotalBaseUnits: tree.total.toString(),
       reserveEvidenceCommitment,
+      reserveTotalBaseUnits: reserveTotal.toString(),
       coverageEvidenceCommitment,
       expiresAt: command.expiresAt,
     };
@@ -117,7 +124,7 @@ export class SnapshotService {
     const attesterPublicKey = this.config.attesterSigner.publicKeyPem();
     const issuerPayload = {
       snapshotId: id,
-      proofSystemVersion: "aqua-merkle-receipt-v1+ed25519-evidence-v1",
+      proofSystemVersion: "aqua-merkle-receipt-v1+midnight-coverage-proof-v1+ed25519-evidence-v1",
       issuerId: command.issuerId,
       attesterId: command.attesterId,
       scopeManifestHash,
@@ -134,7 +141,7 @@ export class SnapshotService {
       idempotencyKeyDigest,
       requestFingerprint,
       schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-      proofSystemVersion: "aqua-merkle-receipt-v1+ed25519-evidence-v1",
+      proofSystemVersion: "aqua-merkle-receipt-v1+midnight-coverage-proof-v1+ed25519-evidence-v1",
       issuerId: command.issuerId,
       attesterId: command.attesterId,
       asset: command.asset,
@@ -193,7 +200,6 @@ export class SnapshotService {
     const transaction = await this.anchorService.attest({
       snapshotId: snapshot.id,
       contractAddress: snapshot.anchored.contractAddress ?? "",
-      result: snapshot.status,
       attestedAt: new Date().toISOString(),
     });
     snapshot.attestedAt = transaction.recordedAt;
@@ -359,7 +365,10 @@ export class SnapshotService {
       snapshotId: snapshot.id,
       scopeManifestHash: snapshot.scopeManifestHash,
       liabilityCommitment: snapshot.liabilityCommitment,
+      membershipRoot: snapshot.membershipRoot,
+      liabilityTotalBaseUnits: snapshot.liabilityTotalBaseUnits,
       reserveEvidenceCommitment: snapshot.reserveEvidenceCommitment,
+      reserveTotalBaseUnits: snapshot.reserveTotalBaseUnits,
       coverageEvidenceCommitment: snapshot.coverageEvidenceCommitment,
       expiresAt: snapshot.expiresAt,
     };
@@ -372,7 +381,12 @@ export class SnapshotService {
       await this.repository.update(snapshot, this.event(snapshot.id, "DEPLOYED", snapshot.issuerId, { transactionId: snapshot.anchored.transactionId ?? "development" }));
       return snapshot;
     } catch (error) {
-      snapshot.anchored = { ...snapshot.anchored, status: "FAILED", failure: "MIDNIGHT_DEPLOYMENT_FAILED", recordedAt: new Date().toISOString() };
+      snapshot.anchored = {
+        ...snapshot.anchored,
+        status: "FAILED",
+        failure: "MIDNIGHT_DEPLOYMENT_FAILED",
+        recordedAt: new Date().toISOString(),
+      };
       await this.repository.update(snapshot, this.event(snapshot.id, "DEPLOYMENT_FAILED", snapshot.issuerId, {}));
       throw error;
     }
@@ -391,8 +405,11 @@ export class SnapshotService {
       chain.snapshotIdentifier !== expectedSnapshotIdentifier ||
       chain.scopeManifestHash !== snapshot.scopeManifestHash ||
       chain.liabilityCommitment !== snapshot.liabilityCommitment ||
+      chain.membershipRoot !== snapshot.membershipRoot ||
       chain.reserveEvidenceCommitment !== snapshot.reserveEvidenceCommitment ||
       chain.coverageEvidenceCommitment !== snapshot.coverageEvidenceCommitment ||
+      chain.liabilityEvidenceCommitment !== snapshot.anchored.proofCommitments?.liabilityEvidenceCommitment ||
+      chain.reserveTotalCommitment !== snapshot.anchored.proofCommitments?.reserveTotalCommitment ||
       chain.expiresAt !== snapshot.expiresAt
     ) {
       throw new Error("Midnight public state does not match the stored snapshot commitments");

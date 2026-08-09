@@ -26,13 +26,16 @@ const requiredProductionEnvironment = [
 
 const checks = requiredFiles.map((file) => ({ name: `required file: ${file}`, passed: existsSync(file) }));
 const compactCheckCommand = process.env.AQUA_COMPACT_CHECK_COMMAND?.trim();
+const defaultCompactCheckCommand = process.platform === "win32"
+  ? 'wsl.exe -d Ubuntu -u aniket -- bash -lc "compact --version"'
+  : `${process.env.COMPACT_BIN ?? "compact"} --version`;
 const compactc = compactCheckCommand
   ? spawnSync(compactCheckCommand, { encoding: "utf8", shell: true })
-  : spawnSync(process.env.COMPACTC_BIN ?? "compactc", ["--version"], { encoding: "utf8", shell: false });
+  : spawnSync(defaultCompactCheckCommand, { encoding: "utf8", shell: true });
 checks.push({
   name: compactCheckCommand
     ? "Midnight Compact compiler (AQUA_COMPACT_CHECK_COMMAND)"
-    : "Midnight Compact compiler (compactc)",
+    : "Midnight Compact compiler used by the worker",
   passed: compactc.status === 0,
 });
 

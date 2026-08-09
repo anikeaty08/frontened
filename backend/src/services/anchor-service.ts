@@ -6,7 +6,10 @@ export interface AnchorPayload {
   snapshotId: string;
   scopeManifestHash: string;
   liabilityCommitment: string;
+  membershipRoot: string;
+  liabilityTotalBaseUnits: string;
   reserveEvidenceCommitment: string;
+  reserveTotalBaseUnits: string;
   coverageEvidenceCommitment: string;
   expiresAt: string;
 }
@@ -14,7 +17,6 @@ export interface AnchorPayload {
 export interface AttestPayload {
   snapshotId: string;
   contractAddress: string;
-  result: Extract<SnapshotStatus, "VERIFIED" | "SHORTFALL">;
   attestedAt: string;
 }
 
@@ -44,6 +46,7 @@ export const lifecycleCommitment = (payload: AnchorPayload): string =>
       payload.snapshotId,
       payload.scopeManifestHash,
       payload.liabilityCommitment,
+      payload.membershipRoot,
       payload.reserveEvidenceCommitment,
       payload.coverageEvidenceCommitment,
       payload.expiresAt,
@@ -60,6 +63,7 @@ export class DevelopmentAnchorService implements AnchorService {
       transactionId: null,
       recordedAt: new Date().toISOString(),
       failure: null,
+      proofCommitments: null,
     };
   }
 
@@ -133,6 +137,7 @@ export class MidnightDirectAnchorService implements AnchorService {
       transactionId: null,
       recordedAt: new Date().toISOString(),
       failure: null,
+      proofCommitments: null,
     };
   }
 
@@ -148,6 +153,10 @@ export class MidnightDirectAnchorService implements AnchorService {
       transactionId: required(response, "transactionId"),
       recordedAt: required(response, "recordedAt"),
       failure: null,
+      proofCommitments: {
+        liabilityEvidenceCommitment: required(response, "liabilityEvidenceCommitment"),
+        reserveTotalCommitment: required(response, "reserveTotalCommitment"),
+      },
     };
   }
 
@@ -172,8 +181,11 @@ export class MidnightDirectAnchorService implements AnchorService {
       snapshotIdentifier: required(response, "snapshotIdentifier"),
       scopeManifestHash: required(response, "scopeManifestHash"),
       liabilityCommitment: required(response, "liabilityCommitment"),
+      membershipRoot: required(response, "membershipRoot"),
       reserveEvidenceCommitment: required(response, "reserveEvidenceCommitment"),
       coverageEvidenceCommitment: required(response, "coverageEvidenceCommitment"),
+      liabilityEvidenceCommitment: required(response, "liabilityEvidenceCommitment"),
+      reserveTotalCommitment: required(response, "reserveTotalCommitment"),
       expiresAt: required(response, "expiresAt"),
       attestedAt: required(response, "attestedAt"),
       revocationReasonHash: required(response, "revocationReasonHash"),

@@ -1,5 +1,5 @@
 import { CompiledContract } from "@midnight-ntwrk/midnight-js-protocol/compact-js";
-import { CompactTypeBytes, CompactTypeVector, persistentHash } from "@midnight-ntwrk/compact-runtime";
+import { CompactTypeBytes, CompactTypeVector, convertFieldToBytes, persistentCommit, persistentHash } from "@midnight-ntwrk/compact-runtime";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Contract, ledger, type Witnesses } from "../contracts/managed/aqua-reserve-snapshot/contract/index.js";
@@ -7,6 +7,10 @@ import { Contract, ledger, type Witnesses } from "../contracts/managed/aqua-rese
 export interface AquaPrivateState {
   issuerAuthorizationSecret: Uint8Array;
   attesterAuthorizationSecret: Uint8Array;
+  liabilityTotal: bigint;
+  liabilityEvidenceOpening: Uint8Array;
+  reserveTotal: bigint;
+  reserveTotalOpening: Uint8Array;
 }
 
 const bytes32 = new CompactTypeBytes(32);
@@ -22,9 +26,16 @@ const pad32 = (value: string): Uint8Array => {
 export const authorizationCommitment = (domain: string, secret: Uint8Array): Uint8Array =>
   persistentHash(vector2Bytes32, [pad32(domain), secret]);
 
+export const totalEvidenceCommitment = (publicEvidence: Uint8Array, total: bigint, opening: Uint8Array): Uint8Array =>
+  persistentCommit(vector2Bytes32, [publicEvidence, convertFieldToBytes(32, total, "Uint<64>")], opening);
+
 const witnesses: Witnesses<AquaPrivateState> = {
   issuerAuthorizationSecret: ({ privateState }) => [privateState, privateState.issuerAuthorizationSecret],
   attesterAuthorizationSecret: ({ privateState }) => [privateState, privateState.attesterAuthorizationSecret],
+  liabilityTotal: ({ privateState }) => [privateState, privateState.liabilityTotal],
+  liabilityEvidenceOpening: ({ privateState }) => [privateState, privateState.liabilityEvidenceOpening],
+  reserveTotal: ({ privateState }) => [privateState, privateState.reserveTotal],
+  reserveTotalOpening: ({ privateState }) => [privateState, privateState.reserveTotalOpening],
 };
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));

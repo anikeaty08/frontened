@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { stdin as input } from "node:process";
@@ -9,7 +9,7 @@ import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-p
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type { EnvironmentConfiguration } from "@midnight-ntwrk/testkit-js";
 import * as Rx from "rxjs";
-import { authorizationCommitment, CompiledAquaReserveContract, ledger, type AquaPrivateState } from "./contract.js";
+import { authorizationCommitment, CompiledAquaReserveContract, ledger, totalEvidenceCommitment, type AquaPrivateState } from "./contract.js";
 import { getNetworkConfig } from "./network.js";
 import { buildProviders } from "./providers.js";
 import { AquaWalletProvider } from "./wallet.js";
@@ -24,11 +24,14 @@ type DeployInput = {
   snapshotId: string;
   scopeManifestHash: string;
   liabilityCommitment: string;
+  membershipRoot: string;
+  liabilityTotalBaseUnits: string;
   reserveEvidenceCommitment: string;
+  reserveTotalBaseUnits: string;
   coverageEvidenceCommitment: string;
   expiresAt: string;
 };
-type AttestInput = { snapshotId: string; contractAddress: string; result: "VERIFIED" | "SHORTFALL"; attestedAt?: string };
+type AttestInput = { snapshotId: string; contractAddress: string; attestedAt?: string };
 type RevokeInput = { snapshotId: string; contractAddress: string; reason: string };
 type InspectInput = { contractAddress: string };
 
@@ -56,10 +59,27 @@ const parseExpiry = (value: string): bigint => {
   if (Number.isNaN(ms)) throw new Error("expiresAt must be an ISO-8601 timestamp");
   return BigInt(Math.floor(ms / 1000));
 };
-const privateState = (): AquaPrivateState => ({
-  issuerAuthorizationSecret: toBytes32(process.env.AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX ?? "", "AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX"),
-  attesterAuthorizationSecret: toBytes32(process.env.AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX ?? "", "AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX"),
-});
+const parseUint64 = (value: string, name: string): bigint => {
+  if (!/^(0|[1-9]\d*)$/.test(value)) throw new Error(`${name} must be an unsigned integer string`);
+  const parsed = BigInt(value);
+  if (parsed > 18_446_744_073_709_551_615n) throw new Error(`${name} must fit Uint<64>`);
+  return parsed;
+};
+const privateState = (payload: DeployInput): AquaPrivateState => {
+  const issuerAuthorizationSecret = toBytes32(process.env.AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX ?? "", "AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX");
+  const deriveOpening = (domain: string): Uint8Array =>
+    Uint8Array.from(createHmac("sha256", issuerAuthorizationSecret)
+      .update(`${domain}|${payload.snapshotId}|${payload.membershipRoot}|${payload.reserveEvidenceCommitment}`)
+      .digest());
+  return {
+    issuerAuthorizationSecret,
+    attesterAuthorizationSecret: toBytes32(process.env.AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX ?? "", "AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX"),
+    liabilityTotal: parseUint64(payload.liabilityTotalBaseUnits, "liabilityTotalBaseUnits"),
+    liabilityEvidenceOpening: deriveOpening("aqua:liability-evidence-opening:v1"),
+    reserveTotal: parseUint64(payload.reserveTotalBaseUnits, "reserveTotalBaseUnits"),
+    reserveTotalOpening: deriveOpening("aqua:reserve-total-opening:v1"),
+  };
+};
 
 const readJson = async <T>(): Promise<T> => {
   const chunks: Buffer[] = [];
@@ -114,7 +134,9 @@ const withPublicData = async <T>(action: (provider: ReturnType<typeof indexerPub
 };
 
 const deploy = async (payload: DeployInput): Promise<Record<string, string>> => {
-  const secrets = privateState();
+  const secrets = privateState(payload);
+  const liabilityEvidenceCommitment = totalEvidenceCommitment(toBytes32(payload.membershipRoot, "membershipRoot"), secrets.liabilityTotal, secrets.liabilityEvidenceOpening);
+  const reserveTotalCommitment = totalEvidenceCommitment(toBytes32(payload.reserveEvidenceCommitment, "reserveEvidenceCommitment"), secrets.reserveTotal, secrets.reserveTotalOpening);
   return withChain(payload.snapshotId, async (providers) => {
     const result = await deployContract(providers, {
       compiledContract: CompiledAquaReserveContract,
@@ -126,8 +148,13 @@ const deploy = async (payload: DeployInput): Promise<Record<string, string>> => 
         authorizationCommitment("aqua:attester-authorisation:v1", secrets.attesterAuthorizationSecret),
         toBytes32(payload.scopeManifestHash, "scopeManifestHash"),
         toBytes32(payload.liabilityCommitment, "liabilityCommitment"),
+        toBytes32(payload.membershipRoot, "membershipRoot"),
         toBytes32(payload.reserveEvidenceCommitment, "reserveEvidenceCommitment"),
         toBytes32(payload.coverageEvidenceCommitment, "coverageEvidenceCommitment"),
+        secrets.liabilityTotal,
+        secrets.liabilityEvidenceOpening,
+        secrets.reserveTotal,
+        secrets.reserveTotalOpening,
         parseExpiry(payload.expiresAt),
       ],
     });
@@ -138,6 +165,8 @@ const deploy = async (payload: DeployInput): Promise<Record<string, string>> => 
       transactionId: result.deployTxData.public.txId,
       recordedAt: new Date().toISOString(),
       commitment: lifecycleCommitment(payload),
+      liabilityEvidenceCommitment: toHex(liabilityEvidenceCommitment),
+      reserveTotalCommitment: toHex(reserveTotalCommitment),
     };
   });
 };
@@ -149,7 +178,7 @@ const attest = async (payload: AttestInput): Promise<Record<string, string>> =>
       contractAddress: payload.contractAddress,
       privateStateId: `aqua-reserve:${payload.snapshotId}`,
       circuitId: "attest",
-      args: [payload.result === "VERIFIED" ? 1n : 2n, BigInt(Math.floor(Date.parse(payload.attestedAt ?? new Date().toISOString()) / 1000))],
+      args: [BigInt(Math.floor(Date.parse(payload.attestedAt ?? new Date().toISOString()) / 1000))],
     });
     return { operation: "ATTESTED", contractAddress: payload.contractAddress, transactionId: transaction.public.txId, recordedAt: new Date().toISOString() };
   });
@@ -185,8 +214,11 @@ const inspect = async (payload: InspectInput): Promise<Record<string, string>> =
       snapshotIdentifier: toHex(state.snapshotId),
       scopeManifestHash: toHex(state.scopeManifestHash),
       liabilityCommitment: toHex(state.liabilityRoot),
+      membershipRoot: toHex(state.membershipRoot),
       reserveEvidenceCommitment: toHex(state.reserveEvidenceCommitment),
       coverageEvidenceCommitment: toHex(state.coverageEvidenceCommitment),
+      liabilityEvidenceCommitment: toHex(state.liabilityEvidenceCommitment),
+      reserveTotalCommitment: toHex(state.reserveTotalCommitment),
       expiresAt: new Date(Number(state.expiresAt) * 1_000).toISOString(),
       attestedAt: state.attestedAt === 0n ? "" : new Date(Number(state.attestedAt) * 1_000).toISOString(),
       revocationReasonHash: toHex(state.revocationReasonHash),

@@ -69,6 +69,7 @@ describe("Aqua Reserve Phase 1 API", () => {
         transactionId: null,
         recordedAt: "2026-08-09T00:00:00.000Z",
         failure: null,
+        proofCommitments: null,
       }),
       deploy: async (payload) => {
         calls.push("deploy");
@@ -81,6 +82,10 @@ describe("Aqua Reserve Phase 1 API", () => {
           transactionId: "deploy-tx-123",
           recordedAt: "2026-08-09T00:00:01.000Z",
           failure: null,
+          proofCommitments: {
+            liabilityEvidenceCommitment: "d".repeat(64),
+            reserveTotalCommitment: "e".repeat(64),
+          },
         };
       },
       attest: async () => {
@@ -104,8 +109,11 @@ describe("Aqua Reserve Phase 1 API", () => {
             .digest("hex"),
           scopeManifestHash: deployedPayload.scopeManifestHash,
           liabilityCommitment: deployedPayload.liabilityCommitment,
+          membershipRoot: deployedPayload.membershipRoot,
           reserveEvidenceCommitment: deployedPayload.reserveEvidenceCommitment,
           coverageEvidenceCommitment: deployedPayload.coverageEvidenceCommitment,
+          liabilityEvidenceCommitment: "d".repeat(64),
+          reserveTotalCommitment: "e".repeat(64),
           expiresAt: deployedPayload.expiresAt,
           attestedAt: "2026-08-09T00:00:02.000Z",
           revocationReasonHash: "a".repeat(64),

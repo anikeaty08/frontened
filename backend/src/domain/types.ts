@@ -55,6 +55,10 @@ export interface AnchorRecord {
   transactionId: string | null;
   recordedAt: string;
   failure: string | null;
+  proofCommitments: {
+    liabilityEvidenceCommitment: string;
+    reserveTotalCommitment: string;
+  } | null;
 }
 
 export interface ChainState {
@@ -63,8 +67,11 @@ export interface ChainState {
   snapshotIdentifier: string;
   scopeManifestHash: string;
   liabilityCommitment: string;
+  membershipRoot: string;
   reserveEvidenceCommitment: string;
   coverageEvidenceCommitment: string;
+  liabilityEvidenceCommitment: string;
+  reserveTotalCommitment: string;
   expiresAt: string;
   attestedAt: string;
   revocationReasonHash: string;

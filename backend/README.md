@@ -79,4 +79,4 @@ Snapshot publication requires an `Idempotency-Key` header (16–128 URL-safe cha
 - Amounts are integer base-unit strings; floating point is never used.
 - Publication stores only keyed idempotency/request digests; it never stores the raw retry key or request body.
 - PostgreSQL schema changes are versioned, transactionally applied, and startup-serialized with an advisory lock.
-- A verified result is a scoped, point-in-time statement—not an audit or general safety claim.
+- The Compact attestation circuit proves a comparison of committed Phase 1 totals; it does not establish that the external reserve evidence or customer source system is complete. A verified result is a scoped, point-in-time statement—not an audit or general safety claim.
