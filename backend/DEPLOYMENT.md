@@ -51,6 +51,8 @@ The authorization secrets remain runtime-only worker environment values. The enc
 
 The worker also writes encrypted, ignored wallet-sync checkpoints under `midnight/.aqua-midnight-state/`. They are encrypted with `AQUA_MIDNIGHT_PRIVATE_STATE_PASSWORD` and are required to resume a long first Preprod sync after an interruption. Do not commit, delete, or overwrite a checkpoint merely because it cannot be decrypted: first verify that the configured password is the original value.
 
+For the single synthetic release flow, run `npm run deploy:phase1:preprod` from `backend/`. It retries wallet readiness only, then creates and attests exactly one demo snapshot. It does not retry a deployment or attestation submission after the worker reports an error.
+
 Persist a release manifest in the deployment secret store containing:
 
 - source hash and compiler version;

@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "check": "tsc -p tsconfig.json --noEmit",
     "preflight:phase1": "node scripts/phase1-preflight.mjs",
-    "demo:phase1": "tsx src/demo/phase1.ts"
+    "demo:phase1": "tsx src/demo/phase1.ts",
+    "deploy:phase1:preprod": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy-phase1-preprod.ps1"
   },
   "dependencies": {
     "@aws-sdk/rds-signer": "^3.1106.0",
