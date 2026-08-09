@@ -11,7 +11,7 @@ if ($proofReady.StatusCode -ne 200) { throw 'The Midnight proof server is not re
 # A cold DUST wallet must replay historical private ledger events before it can
 # safely select a fee coin. Checkpoints make this resumable, but a short outer
 # timeout only creates needless reconnect/restart churn during the first run.
-$env:MIDNIGHT_SYNC_TIMEOUT_MS = if ($env:MIDNIGHT_SYNC_TIMEOUT_MS) { $env:MIDNIGHT_SYNC_TIMEOUT_MS } else { '10800000' }
+$env:MIDNIGHT_SYNC_TIMEOUT_MS = if ($env:MIDNIGHT_SYNC_TIMEOUT_MS) { $env:MIDNIGHT_SYNC_TIMEOUT_MS } else { '28800000' }
 $env:MIDNIGHT_ANCHOR_MODE = 'midnight-preprod'
 
 $ready = $false
