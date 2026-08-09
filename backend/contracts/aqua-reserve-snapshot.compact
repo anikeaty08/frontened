@@ -1,0 +1,99 @@
+// Aqua Reserve Phase 1 — one immutable, privacy-preserving reserve snapshot.
+//
+// This contract intentionally stores only commitments, identity commitments,
+// status and lifecycle data. It MUST NOT receive balances, customer identities,
+// receipt witnesses or reserve-wallet details.
+//
+// A separate contract instance is deployed for each snapshot. This makes the
+// publication immutable by construction; a correction means a new deployment.
+pragma language_version 0.22;
+import CompactStandardLibrary;
+
+// Lifecycle values. The public web app maps these values to human-readable text.
+// 0 = PENDING_ATTESTATION, 1 = VERIFIED, 2 = SHORTFALL, 3 = REVOKED
+export ledger status: Uint<8>;
+
+// Public-safe commitments and metadata hashes only.
+export ledger snapshotId: Bytes<32>;
+export ledger issuerAuthorizationCommitment: Bytes<32>;
+export ledger attesterAuthorizationCommitment: Bytes<32>;
+export ledger scopeManifestHash: Bytes<32>;
+export ledger liabilityRoot: Bytes<32>;
+export ledger reserveEvidenceCommitment: Bytes<32>;
+export ledger coverageEvidenceCommitment: Bytes<32>;
+export ledger expiresAt: Uint<64>;
+export ledger attestedAt: Uint<64>;
+export ledger revocationReasonHash: Bytes<32>;
+
+// The authorisation secrets remain in the issuer/attester prover environment.
+// Their preimages are never placed in public contract state.
+witness issuerAuthorizationSecret(): Bytes<32>;
+witness attesterAuthorizationSecret(): Bytes<32>;
+
+constructor(
+  initialSnapshotId: Bytes<32>,
+  initialIssuerAuthorizationCommitment: Bytes<32>,
+  initialAttesterAuthorizationCommitment: Bytes<32>,
+  initialScopeManifestHash: Bytes<32>,
+  initialLiabilityRoot: Bytes<32>,
+  initialReserveEvidenceCommitment: Bytes<32>,
+  initialCoverageEvidenceCommitment: Bytes<32>,
+  initialExpiresAt: Uint<64>
+) {
+  snapshotId = disclose(initialSnapshotId);
+  issuerAuthorizationCommitment = disclose(initialIssuerAuthorizationCommitment);
+  attesterAuthorizationCommitment = disclose(initialAttesterAuthorizationCommitment);
+  scopeManifestHash = disclose(initialScopeManifestHash);
+  liabilityRoot = disclose(initialLiabilityRoot);
+  reserveEvidenceCommitment = disclose(initialReserveEvidenceCommitment);
+  coverageEvidenceCommitment = disclose(initialCoverageEvidenceCommitment);
+  expiresAt = disclose(initialExpiresAt);
+  attestedAt = disclose(0);
+  revocationReasonHash = disclose(pad(32, "aqua:no-revocation:v1"));
+  status = disclose(0);
+}
+
+// The issuer authorisation is a ZK proof of knowledge of its private preimage.
+// The commitment supplied at deployment is generated off-chain with the same
+// domain separator and is included in the signed Aqua evidence payload.
+export circuit assertIssuerAuthorised(): [] {
+  assert(
+    persistentHash<Vector<2, Bytes<32>>>([
+      pad(32, "aqua:issuer-authorisation:v1"),
+      issuerAuthorizationSecret(),
+    ]) == issuerAuthorizationCommitment,
+    "Issuer authorisation failed"
+  );
+}
+
+export circuit attest(result: Uint<8>, attestationTime: Uint<64>): [] {
+  assert(status == 0, "Snapshot is no longer pending");
+  assert(result == 1 || result == 2, "Result must be VERIFIED or SHORTFALL");
+  assert(blockTimeLt(disclose(expiresAt)), "Snapshot has expired");
+  assert(
+    persistentHash<Vector<2, Bytes<32>>>([
+      pad(32, "aqua:attester-authorisation:v1"),
+      attesterAuthorizationSecret(),
+    ]) == attesterAuthorizationCommitment,
+    "Attester authorisation failed"
+  );
+  status = disclose(result);
+  attestedAt = disclose(attestationTime);
+}
+
+export circuit revoke(reasonHash: Bytes<32>): [] {
+  assert(status != 3, "Snapshot is already revoked");
+  assert(
+    persistentHash<Vector<2, Bytes<32>>>([
+      pad(32, "aqua:issuer-authorisation:v1"),
+      issuerAuthorizationSecret(),
+    ]) == issuerAuthorizationCommitment,
+    "Issuer authorisation failed"
+  );
+  revocationReasonHash = disclose(reasonHash);
+  status = disclose(3);
+}
+
+export circuit isCurrent(): Boolean {
+  return status != 3 && blockTimeLt(disclose(expiresAt));
+}
