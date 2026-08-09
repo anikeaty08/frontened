@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { Ed25519EvidenceSigner, type SigningKeyPairPem } from "./crypto/signing.js";
 import type { Principal } from "./domain/types.js";
 
@@ -13,8 +15,8 @@ export interface AquaConfig {
   customerReferenceKey: Buffer;
   demoAuthEnabled: boolean;
   tokens: Map<string, Principal>;
-  anchorMode: "development" | "midnight-testnet";
-  midnightContractAddress: string | null;
+  anchorMode: "development" | "midnight-preprod";
+  midnightWorkerDirectory: string | null;
   issuerSigner: Ed25519EvidenceSigner;
   attesterSigner: Ed25519EvidenceSigner;
 }
@@ -102,14 +104,20 @@ export const loadConfig = (environmentOverride?: AquaConfig["environment"]): Aqu
     throw new Error("At least one authenticated principal is required in production");
   }
 
-  const anchorMode = process.env.MIDNIGHT_ANCHOR_MODE ?? "development";
-  if (anchorMode !== "development" && anchorMode !== "midnight-testnet") {
-    throw new Error("MIDNIGHT_ANCHOR_MODE must be development or midnight-testnet");
+  const rawAnchorMode = process.env.MIDNIGHT_ANCHOR_MODE ?? "development";
+  const anchorMode = rawAnchorMode === "midnight-testnet" ? "midnight-preprod" : rawAnchorMode;
+  if (anchorMode !== "development" && anchorMode !== "midnight-preprod") {
+    throw new Error("MIDNIGHT_ANCHOR_MODE must be development or midnight-preprod");
   }
-  if (environment === "production" && anchorMode !== "midnight-testnet") {
-    throw new Error("MIDNIGHT_ANCHOR_MODE must be midnight-testnet in production");
+  if (environment === "production" && anchorMode !== "midnight-preprod") {
+    throw new Error("MIDNIGHT_ANCHOR_MODE must be midnight-preprod in production");
   }
-  const midnightContractAddress = anchorMode === "midnight-testnet" ? requiredEnvironment("MIDNIGHT_CONTRACT_ADDRESS") : null;
+  const midnightWorkerDirectory = anchorMode === "midnight-preprod"
+    ? path.resolve(process.env.AQUA_MIDNIGHT_WORKER_DIR ?? path.resolve(process.cwd(), "midnight"))
+    : null;
+  if (midnightWorkerDirectory && !existsSync(path.join(midnightWorkerDirectory, "package.json"))) {
+    throw new Error("AQUA_MIDNIGHT_WORKER_DIR must contain the Midnight lifecycle worker package.json");
+  }
 
   const port = Number.parseInt(process.env.PORT ?? "3000", 10);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("PORT must be a valid TCP port");
@@ -149,7 +157,7 @@ export const loadConfig = (environmentOverride?: AquaConfig["environment"]): Aqu
     demoAuthEnabled,
     tokens,
     anchorMode,
-    midnightContractAddress,
+    midnightWorkerDirectory,
     issuerSigner: signerFromEnvironment("ISSUER", environment),
     attesterSigner: signerFromEnvironment("ATTESTER", environment),
   };

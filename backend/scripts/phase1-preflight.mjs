@@ -5,7 +5,8 @@ const strict = process.argv.includes("--production");
 const requiredFiles = [
   "contracts/aqua-reserve-snapshot.compact",
   "contracts/README.md",
-  "web/package.json",
+  "../frontend/package.json",
+  "midnight/package.json",
   "DEPLOYMENT.md",
 ];
 const requiredProductionEnvironment = [
@@ -20,8 +21,7 @@ const requiredProductionEnvironment = [
   "AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM",
   "AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM",
   "AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM",
-  "MIDNIGHT_CONTRACT_ADDRESS",
-  "MIDNIGHT_ANCHOR_SUBMIT_URL",
+  "AQUA_MIDNIGHT_WORKER_DIR",
 ];
 
 const checks = requiredFiles.map((file) => ({ name: `required file: ${file}`, passed: existsSync(file) }));
@@ -39,7 +39,8 @@ checks.push({
 if (strict) {
   for (const name of requiredProductionEnvironment) checks.push({ name: `production environment: ${name}`, passed: Boolean(process.env[name]) });
   checks.push({ name: "AQUA_RDS_IAM_AUTH enabled", passed: process.env.AQUA_RDS_IAM_AUTH === "true" });
-  checks.push({ name: "MIDNIGHT_ANCHOR_MODE configured", passed: process.env.MIDNIGHT_ANCHOR_MODE === "midnight-testnet" });
+  checks.push({ name: "MIDNIGHT_ANCHOR_MODE configured", passed: process.env.MIDNIGHT_ANCHOR_MODE === "midnight-preprod" });
+  checks.push({ name: "Midnight worker environment file", passed: existsSync("midnight/.env") });
 }
 
 for (const check of checks) console.log(`${check.passed ? "PASS" : "FAIL"}  ${check.name}`);

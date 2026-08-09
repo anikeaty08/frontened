@@ -18,6 +18,6 @@ The Compact circuits govern lifecycle authority and state transitions. The backe
 2. Compile with `compact compile +0.30.0 aqua-reserve-snapshot.compact <output-directory>` and commit neither proving keys nor wallet secrets.
 3. Run the generated circuit tests for successful attestation, shortfall, unapproved attestation, expiry, and revocation.
 4. Deploy with a funded testnet wallet and record the contract address plus transaction ID in the deployment manifest.
-5. Set the API's `MIDNIGHT_ANCHOR_MODE=midnight-testnet` and `MIDNIGHT_ANCHOR_SUBMIT_URL` only after its adapter verifies those deployment values.
+5. Set the API's `MIDNIGHT_ANCHOR_MODE=midnight-preprod`; it invokes the direct `midnight/` worker and records the unique deployed address for each snapshot.
 
 The current network toolchain evolves quickly; compile this source before treating it as deployable. The official release notes note Compact language and compiler changes, including the `compactc` command. [Midnight Testnet release notes](https://docs.midnight.network/assets/files/midnight-testnet-relnotes-04cd2e8c59377cb5554ed776195c2203.pdf)

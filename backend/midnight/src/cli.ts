@@ -4,11 +4,12 @@ import path from "node:path";
 import { stdin as input } from "node:process";
 import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
-import { deployContract, submitCallTx } from "@midnight-ntwrk/midnight-js-contracts";
+import { deployContract, getPublicStates, submitCallTx } from "@midnight-ntwrk/midnight-js-contracts";
+import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import type { EnvironmentConfiguration } from "@midnight-ntwrk/testkit-js";
 import * as Rx from "rxjs";
-import { authorizationCommitment, CompiledAquaReserveContract, type AquaPrivateState } from "./contract.js";
+import { authorizationCommitment, CompiledAquaReserveContract, ledger, type AquaPrivateState } from "./contract.js";
 import { getNetworkConfig } from "./network.js";
 import { buildProviders } from "./providers.js";
 import { AquaWalletProvider } from "./wallet.js";
@@ -29,13 +30,27 @@ type DeployInput = {
 };
 type AttestInput = { snapshotId: string; contractAddress: string; result: "VERIFIED" | "SHORTFALL"; attestedAt?: string };
 type RevokeInput = { snapshotId: string; contractAddress: string; reason: string };
+type InspectInput = { contractAddress: string };
 
 const toBytes32 = (value: string, name: string): Uint8Array => {
   if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error(`${name} must be a 32-byte hexadecimal value`);
   return Uint8Array.from(Buffer.from(value, "hex"));
 };
 const sha256Bytes = (value: string): Uint8Array => Uint8Array.from(createHash("sha256").update(value).digest());
+const lifecycleCommitment = (payload: DeployInput): string =>
+  createHash("sha256")
+    .update([
+      "aqua:midnight-lifecycle:v1",
+      payload.snapshotId,
+      payload.scopeManifestHash,
+      payload.liabilityCommitment,
+      payload.reserveEvidenceCommitment,
+      payload.coverageEvidenceCommitment,
+      payload.expiresAt,
+    ].join("|"))
+    .digest("hex");
 const snapshotIdentifier = (snapshotId: string): Uint8Array => sha256Bytes(`aqua:snapshot-id:v1|${snapshotId}`);
+const toHex = (value: Uint8Array): string => Buffer.from(value).toString("hex");
 const parseExpiry = (value: string): bigint => {
   const ms = Date.parse(value);
   if (Number.isNaN(ms)) throw new Error("expiresAt must be an ISO-8601 timestamp");
@@ -92,6 +107,12 @@ const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<t
   }
 };
 
+const withPublicData = async <T>(action: (provider: ReturnType<typeof indexerPublicDataProvider>) => Promise<T>): Promise<T> => {
+  const config = getNetworkConfig();
+  setNetworkId(config.networkId);
+  return action(indexerPublicDataProvider(config.indexer, config.indexerWS));
+};
+
 const deploy = async (payload: DeployInput): Promise<Record<string, string>> => {
   const secrets = privateState();
   return withChain(payload.snapshotId, async (providers) => {
@@ -116,7 +137,7 @@ const deploy = async (payload: DeployInput): Promise<Record<string, string>> => 
       contractAddress: result.deployTxData.public.contractAddress,
       transactionId: result.deployTxData.public.txId,
       recordedAt: new Date().toISOString(),
-      commitment: createHash("sha256").update(`aqua:midnight-anchor:v2|${payload.snapshotId}|${result.deployTxData.public.contractAddress}`).digest("hex"),
+      commitment: lifecycleCommitment(payload),
     };
   });
 };
@@ -146,6 +167,32 @@ const revoke = async (payload: RevokeInput): Promise<Record<string, string>> =>
     return { operation: "REVOKED", contractAddress: payload.contractAddress, transactionId: transaction.public.txId, recordedAt: new Date().toISOString() };
   });
 
+const inspect = async (payload: InspectInput): Promise<Record<string, string>> =>
+  withPublicData(async (provider) => {
+    const publicStates = await getPublicStates(provider, payload.contractAddress as Parameters<typeof getPublicStates>[1]);
+    const state = ledger(publicStates.contractState.data);
+    const status = new Map<bigint, string>([
+      [0n, "PENDING_ATTESTATION"],
+      [1n, "VERIFIED"],
+      [2n, "SHORTFALL"],
+      [3n, "REVOKED"],
+    ]).get(state.status);
+    if (!status) throw new Error(`Unsupported AquaReserve contract status ${state.status}`);
+    return {
+      operation: "INSPECTED",
+      contractAddress: payload.contractAddress,
+      status,
+      snapshotIdentifier: toHex(state.snapshotId),
+      scopeManifestHash: toHex(state.scopeManifestHash),
+      liabilityCommitment: toHex(state.liabilityRoot),
+      reserveEvidenceCommitment: toHex(state.reserveEvidenceCommitment),
+      coverageEvidenceCommitment: toHex(state.coverageEvidenceCommitment),
+      expiresAt: new Date(Number(state.expiresAt) * 1_000).toISOString(),
+      attestedAt: state.attestedAt === 0n ? "" : new Date(Number(state.attestedAt) * 1_000).toISOString(),
+      revocationReasonHash: toHex(state.revocationReasonHash),
+    };
+  });
+
 const status = async (): Promise<Record<string, string>> =>
   withChain("aqua-reserve-readiness", async () => ({
     operation: "READY",
@@ -159,8 +206,9 @@ try {
   if (command === "deploy") console.log(JSON.stringify(await deploy(await readJson<DeployInput>())));
   else if (command === "attest") console.log(JSON.stringify(await attest(await readJson<AttestInput>())));
   else if (command === "revoke") console.log(JSON.stringify(await revoke(await readJson<RevokeInput>())));
+  else if (command === "inspect") console.log(JSON.stringify(await inspect(await readJson<InspectInput>())));
   else if (command === "status") console.log(JSON.stringify(await status()));
-  else throw new Error("Usage: npm run lifecycle -- <status|deploy|attest|revoke> < payload.json");
+  else throw new Error("Usage: npm run lifecycle -- <status|deploy|attest|revoke|inspect> < payload.json");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

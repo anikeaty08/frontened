@@ -10,8 +10,8 @@
     "check": "tsc --noEmit",
     "compile:contract": "powershell -ExecutionPolicy Bypass -File ./scripts/compile-contract.ps1",
     "lifecycle": "tsx src/cli.ts",
-    "proof:up": "wsl.exe -d Ubuntu -u aniket -- docker compose -f /mnt/c/Users/anike/Desktop/aqua/midnight/compose.yml up -d --wait proof-server",
-    "proof:down": "wsl.exe -d Ubuntu -u aniket -- docker compose -f /mnt/c/Users/anike/Desktop/aqua/midnight/compose.yml stop proof-server",
+    "proof:up": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/proof-server.ps1 up",
+    "proof:down": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/proof-server.ps1 down",
     "test": "vitest run"
   },
   "dependencies": {

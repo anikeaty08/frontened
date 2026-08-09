@@ -1,5 +1,5 @@
 import { loadConfig, type AquaConfig } from "./config.js";
-import { DevelopmentAnchorService, MidnightTestnetAnchorService, type AnchorService } from "./services/anchor-service.js";
+import { DevelopmentAnchorService, MidnightDirectAnchorService, NodeLifecycleRunner, type AnchorService } from "./services/anchor-service.js";
 import { InMemorySnapshotRepository, type SnapshotRepository } from "./persistence/snapshot-repository.js";
 import { PostgresSnapshotRepository } from "./persistence/postgres-snapshot-repository.js";
 import { buildApp } from "./http/app.js";
@@ -27,10 +27,8 @@ export const createRuntime = async (config = loadConfig()): Promise<Runtime> => 
   }
 
   let anchorService: AnchorService = new DevelopmentAnchorService();
-  if (config.anchorMode === "midnight-testnet") {
-    const endpoint = process.env.MIDNIGHT_ANCHOR_SUBMIT_URL;
-    if (!endpoint) throw new Error("MIDNIGHT_ANCHOR_SUBMIT_URL is required for midnight-testnet anchoring");
-    anchorService = new MidnightTestnetAnchorService(endpoint, config.midnightContractAddress!);
+  if (config.anchorMode === "midnight-preprod") {
+    anchorService = new MidnightDirectAnchorService(new NodeLifecycleRunner(config.midnightWorkerDirectory!));
   }
 
   const app = await buildApp({ config, repository, anchorService, logger: true });

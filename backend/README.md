@@ -35,7 +35,7 @@ npm run dev
 Production requires `RDS_CA_CERT_PATH` so TLS is verified. The backend never prints an IAM token or stores it in configuration.
 The AWS execution identity needs `rds-db:connect` permission for the database user, and that PostgreSQL user must have the `rds_iam` role granted. [AWS RDS IAM authentication guidance](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html)
 
-For a real Midnight record, production also requires `MIDNIGHT_CONTRACT_ADDRESS` and `MIDNIGHT_ANCHOR_SUBMIT_URL`. The private adapter receives commitments only and must return that same configured contract address with its transaction ID; a mismatched response is rejected.
+For a real Midnight record, production uses `MIDNIGHT_ANCHOR_MODE=midnight-preprod` and the direct worker in `midnight/`. Each snapshot deploys its own Compact contract; the API never relies on a static contract address or generic anchor relay.
 
 ## Development roles
 
@@ -66,7 +66,7 @@ Snapshot publication requires an `Idempotency-Key` header (16–128 URL-safe cha
 
 - `POST /v1/snapshots` — issuer creates a private snapshot and encrypted customer receipts.
 - `POST /v1/snapshots/:snapshotId/attest` — assigned attester determines `VERIFIED` or `SHORTFALL`.
-- `POST /v1/snapshots/:snapshotId/revoke` — issuer or assigned attester revokes without deleting history.
+- `POST /v1/snapshots/:snapshotId/revoke` — issuer revokes without deleting history.
 - `GET /v1/public/snapshots/:snapshotId` — public, non-sensitive snapshot status.
 - `GET /v1/customer/snapshots/:snapshotId/verification` — authenticated customer’s private inclusion receipt only.
 

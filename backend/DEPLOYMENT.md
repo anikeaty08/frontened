@@ -1,6 +1,6 @@
 # Aqua Reserve Phase 1 deployment runbook
 
-This product is deployable without Docker. Deployment is a controlled release, not an `npm run` side effect: it requires a Midnight wallet/network configuration and AWS identity that are not present in this workspace.
+Deployment is a controlled release, not an `npm run` side effect: it requires a Midnight wallet/network configuration, a local Docker proof server, and AWS identity that are not present in this workspace.
 
 ## 0. Operator identity in Ubuntu WSL
 
@@ -33,9 +33,8 @@ $env:AQUA_ISSUER_ED25519_PRIVATE_KEY_PEM='<issuer-private-key>'
 $env:AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM='<issuer-public-key>'
 $env:AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM='<attester-private-key>'
 $env:AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM='<attester-public-key>'
-$env:MIDNIGHT_ANCHOR_MODE='midnight-testnet'
-$env:MIDNIGHT_CONTRACT_ADDRESS='<deployed-aqua-reserve-contract-address>'
-$env:MIDNIGHT_ANCHOR_SUBMIT_URL='https://your-private-anchor-adapter.example/v1/anchors'
+$env:MIDNIGHT_ANCHOR_MODE='midnight-preprod'
+$env:AQUA_MIDNIGHT_WORKER_DIR='C:\secure\aqua-reserve\backend\midnight'
 # When the approved Compact toolchain runs in Ubuntu WSL rather than Windows:
 $env:AQUA_COMPACT_CHECK_COMMAND='wsl.exe -d Ubuntu -u aniket -- bash -lc "compact compile --help"'
 npm run build
@@ -46,11 +45,13 @@ The AWS role needs `rds-db:connect`; the database principal needs the `rds_iam` 
 
 ## 2. Contract release gate
 
-Compile `contracts/aqua-reserve-snapshot.compact` with the network-pinned official Compact toolchain. The current Phase 1 source declares Compact language `0.22`; it compiles with Compact compiler `0.30.0` using `compact compile +0.30.0 <source> <output-directory>`. Deploy using an issuer-controlled funded wallet, then persist a release manifest in the deployment secret store containing:
+Copy `midnight/.env.example` to the ignored `midnight/.env` and set the wallet mnemonic or seed, the issuer and attester authorisation secrets, and an encrypted private-state password. Start the local proof server with `npm --prefix midnight run proof:up`, then compile with `npm --prefix midnight run compile:contract`. The API invokes `npm run lifecycle -- deploy` in that worker for every newly published snapshot.
+
+Persist a release manifest in the deployment secret store containing:
 
 - source hash and compiler version;
-- Midnight network and contract address;
-- deploy transaction ID and block height;
+- Midnight network and each snapshot contract address;
+- deploy, attest, and revoke transaction IDs and block heights;
 - issuer/attester authorisation commitment fingerprints;
 - deployment timestamp and operator approval.
 
@@ -59,13 +60,13 @@ Never place wallet seeds, private evidence, customer data, receipts, or proving 
 ## 3. Web release configuration
 
 ```powershell
-Set-Location web
+Set-Location ..\frontend
 $env:NEXT_PUBLIC_AQUA_API_URL='https://your-api-domain.example'
 npm run build
 npm start
 ```
 
-Deploy the API and web app as separate services. Allow only the configured web origin in API CORS. The API/prover service and the anchor adapter must stay private; the browser only calls public endpoints or a customer-authenticated verification endpoint.
+Deploy the API and documentation/web app as separate services. Allow only the configured web origin in API CORS. The API/prover service and direct Midnight worker must stay private; the browser only calls public endpoints or a customer-authenticated verification endpoint.
 
 ## 4. Release proof
 

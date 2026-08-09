@@ -48,11 +48,26 @@ export interface EncryptedReceipt {
 }
 
 export interface AnchorRecord {
-  mode: "DEVELOPMENT" | "MIDNIGHT_TESTNET";
+  mode: "DEVELOPMENT" | "MIDNIGHT_PREPROD";
+  status: "PENDING" | "CONFIRMED" | "FAILED";
   contractAddress: string | null;
   commitment: string;
   transactionId: string | null;
   recordedAt: string;
+  failure: string | null;
+}
+
+export interface ChainState {
+  contractAddress: string;
+  status: Extract<SnapshotStatus, "PENDING_ATTESTATION" | "VERIFIED" | "SHORTFALL" | "REVOKED">;
+  snapshotIdentifier: string;
+  scopeManifestHash: string;
+  liabilityCommitment: string;
+  reserveEvidenceCommitment: string;
+  coverageEvidenceCommitment: string;
+  expiresAt: string;
+  attestedAt: string;
+  revocationReasonHash: string;
 }
 
 export interface SnapshotSignatures {
@@ -122,7 +137,7 @@ export interface PublicSnapshot {
 export interface SnapshotEvent {
   id: string;
   snapshotId: string;
-  type: "CREATED" | "ATTESTED" | "REVOKED";
+  type: "CREATED" | "DEPLOYED" | "DEPLOYMENT_FAILED" | "ATTESTED" | "REVOKED";
   actorId: string;
   occurredAt: string;
   metadata: Record<string, string>;
