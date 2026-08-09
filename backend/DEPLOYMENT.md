@@ -45,9 +45,11 @@ The AWS role needs `rds-db:connect`; the database principal needs the `rds_iam` 
 
 ## 2. Contract release gate
 
-Copy `midnight/.env.example` to the ignored `midnight/.env` and set the wallet mnemonic or seed, the issuer and attester authorisation secrets, and an encrypted private-state password. Start the local proof server with `npm --prefix midnight run proof:up`, then compile with `npm --prefix midnight run compile:contract`. The API invokes `npm run lifecycle -- deploy` in that worker for every newly published snapshot.
+Copy `midnight/.env.example` to the ignored `midnight/.env` and set the wallet mnemonic or seed, the issuer and attester authorisation secrets, and an encrypted private-state password. Start the local proof server with `npm --prefix midnight run proof:up`, then compile with `npm --prefix midnight run compile:contract`. The API owns one persistent local Midnight lifecycle worker; it keeps the wallet warm and serializes deploy, attest, and revoke operations.
 
 The authorization secrets remain runtime-only worker environment values. The encrypted Midnight private-state store retains the coverage witnesses and commitment openings required for later proof calls, but not issuer/attester authorization secrets. Keep deployment, attestation, and revocation operations in separately scoped runtime environments when moving beyond the Phase 1 demo roles.
+
+The worker also writes encrypted, ignored wallet-sync checkpoints under `midnight/.aqua-midnight-state/`. They are encrypted with `AQUA_MIDNIGHT_PRIVATE_STATE_PASSWORD` and are required to resume a long first Preprod sync after an interruption. Do not commit, delete, or overwrite a checkpoint merely because it cannot be decrypted: first verify that the configured password is the original value.
 
 Persist a release manifest in the deployment secret store containing:
 
