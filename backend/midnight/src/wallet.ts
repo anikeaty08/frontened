@@ -97,7 +97,7 @@ const configurationFor = (environment: EnvironmentConfiguration, dustOptions: Du
   // deployer may need to replay the entire private DUST ledger on first use;
   // batching preserves event order while avoiding an artificial inter-batch
   // pause during that one-time catch-up.
-  batchUpdates: { size: 50, timeout: 20, spacing: 0 },
+  batchUpdates: { size: 50, timeout: 100, spacing: 0 },
   provingServerUrl: new URL(environment.proofServer),
   networkId: environment.walletNetworkId,
   relayURL: new URL(environment.nodeWS),
