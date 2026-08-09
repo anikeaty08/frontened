@@ -195,13 +195,20 @@ const startWalletSession = async (config: ReturnType<typeof getNetworkConfig>): 
   };
   const wallet = await AquaWalletProvider.fromEnvironment(environment);
   if (process.env.MIDNIGHT_WALLET_SESSION === "warm") warmWallet = wallet;
-  const startupTimeoutMs = timeoutSetting("MIDNIGHT_WALLET_START_TIMEOUT_MS", 120_000);
-  console.error(`[wallet] starting ${config.networkId}; timeout=${startupTimeoutMs}ms`);
-  await within("Midnight wallet startup", startupTimeoutMs, wallet.start());
-  console.error("[wallet] started; waiting for shielded, unshielded, and DUST sync");
-  await syncWallet(wallet);
-  console.error("[wallet] synchronization complete");
-  return { wallet, config };
+  try {
+    const startupTimeoutMs = timeoutSetting("MIDNIGHT_WALLET_START_TIMEOUT_MS", 120_000);
+    console.error(`[wallet] starting ${config.networkId}; timeout=${startupTimeoutMs}ms`);
+    await within("Midnight wallet startup", startupTimeoutMs, wallet.start());
+    console.error("[wallet] started; waiting for shielded, unshielded, and DUST sync");
+    await syncWallet(wallet);
+    console.error("[wallet] synchronization complete");
+    return { wallet, config };
+  } catch (cause) {
+    await wallet.saveCheckpoint().catch(() => undefined);
+    await within("Midnight wallet shutdown", timeoutSetting("MIDNIGHT_WALLET_STOP_TIMEOUT_MS", 15_000), wallet.stop()).catch(() => undefined);
+    if (warmWallet === wallet) warmWallet = undefined;
+    throw cause;
+  }
 };
 
 export const stopWarmWalletSession = async (): Promise<void> => {
@@ -227,7 +234,10 @@ export const checkpointWarmWalletSession = async (): Promise<void> => {
 const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<typeof buildProviders>) => Promise<T>): Promise<T> => {
   const config = getNetworkConfig();
   if (process.env.MIDNIGHT_WALLET_SESSION === "warm") {
-    warmSession ??= startWalletSession(config);
+    warmSession ??= startWalletSession(config).catch((cause: unknown) => {
+      warmSession = undefined;
+      throw cause;
+    });
     const session = await warmSession;
     if (session.config.networkId !== config.networkId) throw new Error("Warm Midnight wallet network differs from requested network");
     return action(buildProviders(session.wallet, snapshotId, config));
@@ -238,7 +248,7 @@ const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<t
   } finally {
     console.error("[wallet] stopping");
     await wallet.saveCheckpoint();
-    await wallet.stop();
+    await within("Midnight wallet shutdown", timeoutSetting("MIDNIGHT_WALLET_STOP_TIMEOUT_MS", 15_000), wallet.stop()).catch(() => undefined);
   }
 };
 
@@ -373,5 +383,10 @@ if (isCliEntrypoint) {
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
+  } finally {
+    // SDK subscriptions can outlive a failed one-shot command. The persistent
+    // daemon has its own lifecycle; a CLI invocation must not leave a stale
+    // wallet process behind after it has checkpointed and reported its result.
+    setTimeout(() => process.exit(process.exitCode ?? 0), 0);
   }
 }
