@@ -1,0 +1,288 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
+import { loadConfig } from "../src/config.js";
+import { canonicalJson } from "../src/crypto/hash.js";
+import { verifyReceipt } from "../src/crypto/merkle.js";
+import { buildApp } from "../src/http/app.js";
+import { InMemorySnapshotRepository } from "../src/persistence/snapshot-repository.js";
+import { DevelopmentAnchorService } from "../src/services/anchor-service.js";
+
+let idempotencySequence = 0;
+const issuerHeaders = {
+  authorization: "Bearer issuer-demo-token",
+  get "idempotency-key"() {
+    return `test-idempotency-${String(++idempotencySequence).padStart(8, "0")}`;
+  },
+};
+const attesterHeaders = { authorization: "Bearer attester-demo-token" };
+const customerHeaders = (number: number) => ({ authorization: `Bearer customer-demo-token-${String(number).padStart(3, "0")}` });
+
+const snapshotBody = (overrides: Record<string, unknown> = {}) => ({
+  issuerId: "issuer-demo",
+  attesterId: "attester-demo",
+  asset: { code: "DUSD", decimals: 6 },
+  scope: {
+    liabilityDefinition: "Synthetic customer balances held by the demo custodian in DUSD.",
+    includedCategories: ["customer spot balances"],
+    excludedCategories: ["margin balances", "corporate treasury"],
+    limitations: "This is a synthetic point-in-time Phase 1 demonstration. It is not a financial audit.",
+  },
+  cutoffAt: "2026-08-08T12:00:00.000Z",
+  expiresAt: "2030-08-08T12:00:00.000Z",
+  reserveTotalBaseUnits: "9000000",
+  reserveEvidenceReference: "demo-reserve-evidence-reference-2026-08-08",
+  liabilities: [
+    { customerId: "customer-001", balanceBaseUnits: "1000000" },
+    { customerId: "customer-002", balanceBaseUnits: "2000000" },
+    { customerId: "customer-003", balanceBaseUnits: "3000000" },
+  ],
+  ...overrides,
+});
+
+const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
+const makeApp = async () => {
+  const config = loadConfig("test");
+  config.webOrigin = "http://localhost:3001";
+  const app = await buildApp({
+    config,
+    repository: new InMemorySnapshotRepository(),
+    anchorService: new DevelopmentAnchorService(),
+  });
+  apps.push(app);
+  return app;
+};
+
+afterEach(async () => {
+  await Promise.all(apps.splice(0).map((app) => app.close()));
+});
+
+describe("Aqua Reserve Phase 1 API", () => {
+  it("permits only the configured web application origin", async () => {
+    const app = await makeApp();
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/v1/snapshots",
+      headers: {
+        origin: "http://localhost:3001",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "authorization,content-type,idempotency-key",
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe("http://localhost:3001");
+    expect(preflight.headers["access-control-allow-headers"]).toContain("idempotency-key");
+  });
+
+  it("makes snapshot publication safely idempotent and rejects key reuse with altered input", async () => {
+    const app = await makeApp();
+    const headers = { authorization: "Bearer issuer-demo-token", "idempotency-key": "publish-retry-key-0001" };
+    const first = await app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() });
+    const retry = await app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() });
+    expect(first.statusCode).toBe(201);
+    expect(retry.statusCode).toBe(201);
+    expect(retry.json<{ snapshot: { id: string } }>().snapshot.id).toBe(first.json<{ snapshot: { id: string } }>().snapshot.id);
+
+    const altered = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers,
+      payload: snapshotBody({ reserveTotalBaseUnits: "9000001" }),
+    });
+    expect(altered.statusCode).toBe(409);
+
+    const missingKey = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers: { authorization: "Bearer issuer-demo-token" },
+      payload: snapshotBody(),
+    });
+    expect(missingKey.statusCode).toBe(400);
+  });
+
+  it("publishes an attested covered snapshot without exposing customer data publicly", async () => {
+    const app = await makeApp();
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    expect(created.statusCode).toBe(201);
+    const snapshotId = created.json<{ snapshot: { id: string; status: string } }>().snapshot.id;
+    expect(created.json<{ snapshot: { status: string } }>().snapshot.status).toBe("PENDING_ATTESTATION");
+
+    const attested = await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
+    expect(attested.statusCode).toBe(200);
+    expect(attested.json<{ snapshot: { status: string } }>().snapshot.status).toBe("VERIFIED");
+
+    const publicResult = await app.inject({ method: "GET", url: `/v1/public/snapshots/${snapshotId}` });
+    expect(publicResult.statusCode).toBe(200);
+    expect(publicResult.json<{ snapshot: { status: string; anchor: { mode: string } } }>().snapshot.status).toBe("VERIFIED");
+    expect(publicResult.json<{ snapshot: { anchor: { mode: string } } }>().snapshot.anchor.mode).toBe("DEVELOPMENT");
+    expect(publicResult.body).not.toContain("customer-001");
+    expect(publicResult.body).not.toContain("1000000");
+    expect(publicResult.body).not.toContain("demo-reserve-evidence-reference");
+    const publicSnapshot = publicResult.json<{
+      snapshot: {
+        id: string;
+        proofSystemVersion: string;
+        issuerId: string;
+        attesterId: string;
+        scopeManifestHash: string;
+        liabilityCommitment: string;
+        reserveEvidenceCommitment: string;
+        coverageEvidenceCommitment: string;
+        expiresAt: string;
+        issuerPublicKey: string;
+        issuerSignature: string;
+        anchor: { commitment: string };
+      };
+    }>().snapshot;
+    expect(
+      verifySignature(
+        null,
+        Buffer.from(
+          canonicalJson({
+            snapshotId: publicSnapshot.id,
+            proofSystemVersion: publicSnapshot.proofSystemVersion,
+            issuerId: publicSnapshot.issuerId,
+            attesterId: publicSnapshot.attesterId,
+            scopeManifestHash: publicSnapshot.scopeManifestHash,
+            liabilityCommitment: publicSnapshot.liabilityCommitment,
+            reserveEvidenceCommitment: publicSnapshot.reserveEvidenceCommitment,
+            coverageEvidenceCommitment: publicSnapshot.coverageEvidenceCommitment,
+            expiresAt: publicSnapshot.expiresAt,
+            anchorCommitment: publicSnapshot.anchor.commitment,
+            issuerPublicKey: publicSnapshot.issuerPublicKey,
+            attesterPublicKey: publicResult.json<{ snapshot: { attesterPublicKey: string } }>().snapshot.attesterPublicKey,
+          }),
+        ),
+        createPublicKey(publicSnapshot.issuerPublicKey),
+        Buffer.from(publicSnapshot.issuerSignature, "base64url"),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns a customer-only private inclusion receipt that verifies locally", async () => {
+    const app = await makeApp();
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+    await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
+
+    const customer = await app.inject({
+      method: "GET",
+      url: `/v1/customer/snapshots/${snapshotId}/verification`,
+      headers: customerHeaders(1),
+    });
+    expect(customer.statusCode).toBe(200);
+    const verification = customer.json<{
+      verification: { included: boolean; cryptographicallyValid: boolean; receipt: { balanceBaseUnits: string; proof: Array<{ siblingHash: string; siblingPosition: "LEFT" | "RIGHT" }>; customerReference: string; salt: string; membershipRoot: string } };
+    }>().verification;
+    expect(verification.included).toBe(true);
+    expect(verification.cryptographicallyValid).toBe(true);
+    expect(verification.receipt.balanceBaseUnits).toBe("1000000");
+    expect(
+      verifyReceipt({
+        customerReference: verification.receipt.customerReference,
+        balanceBaseUnits: BigInt(verification.receipt.balanceBaseUnits),
+        salt: verification.receipt.salt,
+        membershipRoot: verification.receipt.membershipRoot,
+        proof: verification.receipt.proof,
+      }),
+    ).toBe(true);
+    const tamperedProof = verification.receipt.proof.map((step, index) =>
+      index === 0 ? { ...step, siblingHash: "0".repeat(64) } : step,
+    );
+    expect(
+      verifyReceipt({
+        customerReference: verification.receipt.customerReference,
+        balanceBaseUnits: BigInt(verification.receipt.balanceBaseUnits),
+        salt: verification.receipt.salt,
+        membershipRoot: verification.receipt.membershipRoot,
+        proof: tamperedProof,
+      }),
+    ).toBe(false);
+  });
+
+  it("reports an omitted customer as not included without exposing any other receipt", async () => {
+    const app = await makeApp();
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+    const customer = await app.inject({
+      method: "GET",
+      url: `/v1/customer/snapshots/${snapshotId}/verification`,
+      headers: customerHeaders(4),
+    });
+    expect(customer.statusCode).toBe(200);
+    expect(customer.json<{ verification: { included: boolean; receipt: unknown } }>().verification).toEqual({
+      included: false,
+      cryptographicallyValid: false,
+      currentStatus: "PENDING_ATTESTATION",
+      receipt: null,
+    });
+  });
+
+  it("marks an underfunded snapshot as a shortfall", async () => {
+    const app = await makeApp();
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers: issuerHeaders,
+      payload: snapshotBody({ reserveTotalBaseUnits: "5999999" }),
+    });
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+    const attested = await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
+    expect(attested.json<{ snapshot: { status: string } }>().snapshot.status).toBe("SHORTFALL");
+  });
+
+  it("does not report expired or revoked snapshots as verified", async () => {
+    const app = await makeApp();
+    const expired = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers: issuerHeaders,
+      payload: snapshotBody({ cutoffAt: "2020-01-01T00:00:00.000Z", expiresAt: "2020-01-02T00:00:00.000Z" }),
+    });
+    const expiredId = expired.json<{ snapshot: { id: string } }>().snapshot.id;
+    const expiredPublic = await app.inject({ method: "GET", url: `/v1/public/snapshots/${expiredId}` });
+    expect(expiredPublic.json<{ snapshot: { status: string } }>().snapshot.status).toBe("EXPIRED");
+
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+    await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
+    const revoked = await app.inject({
+      method: "POST",
+      url: `/v1/snapshots/${snapshotId}/revoke`,
+      headers: issuerHeaders,
+      payload: { reason: "The synthetic reserve evidence was intentionally replaced for the demo." },
+    });
+    expect(revoked.json<{ snapshot: { status: string } }>().snapshot.status).toBe("REVOKED");
+  });
+
+  it("enforces role separation and input invariants", async () => {
+    const app = await makeApp();
+    const forbiddenPublish = await app.inject({ method: "POST", url: "/v1/snapshots", headers: customerHeaders(1), payload: snapshotBody() });
+    expect(forbiddenPublish.statusCode).toBe(403);
+
+    const duplicateCustomers = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers: issuerHeaders,
+      payload: snapshotBody({ liabilities: [{ customerId: "customer-001", balanceBaseUnits: "1" }, { customerId: "customer-001", balanceBaseUnits: "2" }] }),
+    });
+    expect(duplicateCustomers.statusCode).toBe(409);
+  });
+
+  it("handles the 25-customer Phase 1 demo size", async () => {
+    const app = await makeApp();
+    const liabilities = Array.from({ length: 25 }, (_, index) => ({
+      customerId: `customer-${String(index + 1).padStart(3, "0")}`,
+      balanceBaseUnits: String((index + 1) * 100_000),
+    }));
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers: issuerHeaders,
+      payload: snapshotBody({ liabilities, reserveTotalBaseUnits: "33500000" }),
+    });
+    expect(created.statusCode).toBe(201);
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+    const attested = await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
+    expect(attested.json<{ snapshot: { status: string } }>().snapshot.status).toBe("VERIFIED");
+  });
+});
