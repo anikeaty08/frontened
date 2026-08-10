@@ -1,6 +1,7 @@
 import pg from "pg";
 import { Signer } from "@aws-sdk/rds-signer";
 import { readFileSync } from "node:fs";
+import { rootCertificates } from "node:tls";
 import type { RdsIamConfig } from "../config.js";
 import type { EncryptedReceipt, ReserveSnapshot, SnapshotEvent } from "../domain/types.js";
 import { SnapshotRevisionConflictError, type SnapshotRepository } from "./snapshot-repository.js";
@@ -27,7 +28,10 @@ export class PostgresSnapshotRepository implements SnapshotRepository {
       region: config.region,
     });
     const ssl = config.caCertificatePath
-      ? { ca: readFileSync(config.caCertificatePath, "utf8"), rejectUnauthorized: true }
+      // Supplying `ca` replaces Node's default roots. Retain them as well as the
+      // regional RDS bundle because an Aurora endpoint can present an Amazon
+      // public-certificate chain rather than an RDS G1 chain.
+      ? { ca: [...rootCertificates, readFileSync(config.caCertificatePath, "utf8")], rejectUnauthorized: true }
       : requireTlsVerification
         ? (() => {
             throw new Error("RDS_CA_CERT_PATH is required when TLS verification is enabled");
