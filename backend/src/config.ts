@@ -54,8 +54,8 @@ const signerFromEnvironment = (
   prefix: "ISSUER" | "ATTESTER",
   requiresPersistentSecrets: boolean,
 ): Ed25519EvidenceSigner => {
-  const privateKeyPem = process.env[`AQUA_${prefix}_ED25519_PRIVATE_KEY_PEM`];
-  const publicKeyPem = process.env[`AQUA_${prefix}_ED25519_PUBLIC_KEY_PEM`];
+  const privateKeyPem = pemFromEnvironment(`AQUA_${prefix}_ED25519_PRIVATE_KEY_PEM`);
+  const publicKeyPem = pemFromEnvironment(`AQUA_${prefix}_ED25519_PUBLIC_KEY_PEM`);
   if (privateKeyPem || publicKeyPem) {
     if (!privateKeyPem || !publicKeyPem) throw new Error(`AQUA_${prefix}_ED25519_PRIVATE_KEY_PEM and PUBLIC_KEY_PEM must be supplied together`);
     return Ed25519EvidenceSigner.fromPem({ privateKeyPem, publicKeyPem } satisfies SigningKeyPairPem);
@@ -64,6 +64,18 @@ const signerFromEnvironment = (
     throw new Error(`AQUA_${prefix}_ED25519_PRIVATE_KEY_PEM is required for production or Midnight Preprod`);
   }
   return Ed25519EvidenceSigner.createEphemeral();
+};
+
+const pemFromEnvironment = (name: string): string | undefined => {
+  const pem = process.env[name];
+  const encoded = process.env[`${name}_BASE64`];
+  if (pem && encoded) throw new Error(`Use either ${name} or ${name}_BASE64, not both`);
+  if (!encoded) return pem;
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
+  if (!decoded.includes("-----BEGIN") || !decoded.includes("-----END")) {
+    throw new Error(`${name}_BASE64 must decode to a PEM key`);
+  }
+  return decoded;
 };
 
 export const loadConfig = (environmentOverride?: AquaConfig["environment"]): AquaConfig => {
