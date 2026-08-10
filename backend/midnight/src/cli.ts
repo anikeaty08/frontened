@@ -23,10 +23,14 @@ import { buildProviders } from "./providers.js";
 import { AquaWalletProvider } from "./wallet.js";
 
 const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".env");
-// A deployer can be launched from a shell that still has stale secret values.
-// The project file is the source of truth for this worker, so intentionally
-// override inherited values rather than using loadEnvFile's non-overriding merge.
-if (existsSync(envFile)) Object.assign(process.env, parseEnv(readFileSync(envFile, "utf8")));
+// A deployer can be launched from a shell that still has stale wallet secrets.
+// The project file is the source of truth for this worker, so discard inherited
+// wallet credentials before applying its parsed configuration.
+if (existsSync(envFile)) {
+  delete process.env.MIDNIGHT_WALLET_MNEMONIC;
+  delete process.env.MIDNIGHT_WALLET_SEED;
+  Object.assign(process.env, parseEnv(readFileSync(envFile, "utf8")));
+}
 
 // Node does not provide the browser WebSocket global used by GraphQL subscriptions.
 globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
