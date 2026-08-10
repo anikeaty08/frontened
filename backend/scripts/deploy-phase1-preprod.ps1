@@ -5,6 +5,10 @@ $ErrorActionPreference = 'Stop'
 # retries occur before deployment only; a failed deployment is never retried.
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $workerRoot = Join-Path $projectRoot 'midnight'
+$runtimeDirectory = Join-Path $projectRoot '.runtime'
+New-Item -ItemType Directory -Force -Path $runtimeDirectory | Out-Null
+$apiOutputLog = Join-Path $runtimeDirectory 'api-preprod-live.out.log'
+$apiErrorLog = Join-Path $runtimeDirectory 'api-preprod-live.err.log'
 $proofReady = Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 'http://127.0.0.1:6300/ready'
 if ($proofReady.StatusCode -ne 200) { throw 'The Midnight proof server is not ready on http://127.0.0.1:6300.' }
 
@@ -32,7 +36,7 @@ if (-not $ready) { throw 'Wallet did not synchronize within the bounded readines
 $occupied = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 if ($occupied) { throw 'Port 3000 is already in use. Stop the existing API or run the demo against that known Preprod API instance.' }
 
-$api = Start-Process -FilePath 'npm.cmd' -ArgumentList @('run', 'dev') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru
+$api = Start-Process -FilePath 'npm.cmd' -ArgumentList @('run', 'dev') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput $apiOutputLog -RedirectStandardError $apiErrorLog
 try {
   $deadline = (Get-Date).AddSeconds(30)
   do {

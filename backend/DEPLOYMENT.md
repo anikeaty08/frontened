@@ -13,9 +13,11 @@ aws sts get-caller-identity
 
 The identity must be authorised for `rds-db:connect` to the configured database principal. The current AWS CLI installation is independent of Docker.
 
+The API process must use the same AWS credential provider as the CLI. An `export` in one open WSL terminal is not inherited by a Windows Node process. Either run the API under WSL with a Linux Node runtime and its AWS profile, or install/authenticate the AWS CLI/profile used by the Windows service account.
+
 ## 1. Backend release configuration
 
-Set production secrets in the deployment environment only:
+Set persistent release secrets in the deployment environment only. The same requirements apply to a synthetic Midnight Preprod release even when `NODE_ENV=development` is used for the demo roles:
 
 ```powershell
 $env:NODE_ENV='production'
@@ -51,7 +53,7 @@ The authorization secrets remain runtime-only worker environment values. The enc
 
 The worker also writes encrypted, ignored wallet-sync checkpoints under `midnight/.aqua-midnight-state/`. They are encrypted with `AQUA_MIDNIGHT_PRIVATE_STATE_PASSWORD` and are required to resume a long first Preprod sync after an interruption. Do not commit, delete, or overwrite a checkpoint merely because it cannot be decrypted: first verify that the configured password is the original value.
 
-For the single synthetic release flow, run `npm run deploy:phase1:preprod` from `backend/`. It retries wallet readiness only, then creates and attests exactly one demo snapshot. It does not retry a deployment or attestation submission after the worker reports an error.
+For the single synthetic release flow, run `npm run deploy:phase1:preprod` from `backend/`. It refuses to use the in-memory repository, retries wallet readiness only, then creates and attests exactly one demo snapshot. It does not retry a deployment or attestation submission after the worker reports an error. API standard output and errors are captured in ignored `.runtime/api-preprod-live.out.log` and `.runtime/api-preprod-live.err.log` for reconciliation.
 
 Persist a release manifest in the deployment secret store containing:
 

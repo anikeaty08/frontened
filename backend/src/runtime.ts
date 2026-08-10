@@ -18,12 +18,15 @@ export const createRuntime = async (config = loadConfig()): Promise<Runtime> => 
     repository = postgres;
     closeRepository = () => postgres.close();
   } else if (config.rdsIam) {
-    const postgres = PostgresSnapshotRepository.fromRdsIam(config.rdsIam, config.environment === "production");
+    const postgres = PostgresSnapshotRepository.fromRdsIam(
+      config.rdsIam,
+      config.environment === "production" || config.anchorMode === "midnight-preprod",
+    );
     await postgres.migrate();
     repository = postgres;
     closeRepository = () => postgres.close();
-  } else if (config.environment === "production") {
-    throw new Error("DATABASE_URL or AQUA_RDS_IAM_AUTH is required in production");
+  } else if (config.environment === "production" || config.anchorMode === "midnight-preprod") {
+    throw new Error("DATABASE_URL or AQUA_RDS_IAM_AUTH is required for production or Midnight Preprod; in-memory snapshots cannot safely track a chain deployment");
   }
 
   let anchorService: AnchorService = new DevelopmentAnchorService();
