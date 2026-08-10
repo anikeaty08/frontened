@@ -1,8 +1,9 @@
 import { createHash, createHmac } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { stdin as input } from "node:process";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
 import { WebSocket } from "ws";
 import { deployContract, getPublicStates, submitCallTx } from "@midnight-ntwrk/midnight-js-contracts";
 import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
@@ -22,7 +23,10 @@ import { buildProviders } from "./providers.js";
 import { AquaWalletProvider } from "./wallet.js";
 
 const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".env");
-if (existsSync(envFile)) process.loadEnvFile(envFile);
+// A deployer can be launched from a shell that still has stale secret values.
+// The project file is the source of truth for this worker, so intentionally
+// override inherited values rather than using loadEnvFile's non-overriding merge.
+if (existsSync(envFile)) Object.assign(process.env, parseEnv(readFileSync(envFile, "utf8")));
 
 // Node does not provide the browser WebSocket global used by GraphQL subscriptions.
 globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
