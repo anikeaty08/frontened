@@ -180,6 +180,7 @@ const syncWallet = async (wallet: AquaWalletProvider): Promise<void> => {
 type WalletSession = { wallet: AquaWalletProvider; config: ReturnType<typeof getNetworkConfig> };
 let warmSession: Promise<WalletSession> | undefined;
 let warmWallet: AquaWalletProvider | undefined;
+let activeWalletForRecovery: AquaWalletProvider | undefined;
 
 const startWalletSession = async (config: ReturnType<typeof getNetworkConfig>): Promise<WalletSession> => {
   setNetworkId(config.networkId);
@@ -194,6 +195,7 @@ const startWalletSession = async (config: ReturnType<typeof getNetworkConfig>): 
     proofServer: config.proofServer,
   };
   const wallet = await AquaWalletProvider.fromEnvironment(environment);
+  activeWalletForRecovery = wallet;
   if (process.env.MIDNIGHT_WALLET_SESSION === "warm") warmWallet = wallet;
   try {
     const startupTimeoutMs = timeoutSetting("MIDNIGHT_WALLET_START_TIMEOUT_MS", 120_000);
@@ -207,6 +209,7 @@ const startWalletSession = async (config: ReturnType<typeof getNetworkConfig>): 
     await wallet.saveCheckpoint().catch(() => undefined);
     await within("Midnight wallet shutdown", timeoutSetting("MIDNIGHT_WALLET_STOP_TIMEOUT_MS", 15_000), wallet.stop()).catch(() => undefined);
     if (warmWallet === wallet) warmWallet = undefined;
+    if (activeWalletForRecovery === wallet) activeWalletForRecovery = undefined;
     throw cause;
   }
 };
@@ -223,6 +226,7 @@ export const stopWarmWalletSession = async (): Promise<void> => {
   } catch {
     // A failed startup has no usable wallet to stop.
   }
+  if (activeWalletForRecovery === wallet) activeWalletForRecovery = undefined;
 };
 
 export const checkpointWarmWalletSession = async (): Promise<void> => {
@@ -249,6 +253,7 @@ const withChain = async <T>(snapshotId: string, action: (providers: ReturnType<t
     console.error("[wallet] stopping");
     await wallet.saveCheckpoint();
     await within("Midnight wallet shutdown", timeoutSetting("MIDNIGHT_WALLET_STOP_TIMEOUT_MS", 15_000), wallet.stop()).catch(() => undefined);
+    if (activeWalletForRecovery === wallet) activeWalletForRecovery = undefined;
   }
 };
 
@@ -373,6 +378,19 @@ export const executeLifecycle = async (
 
 const isCliEntrypoint = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isCliEntrypoint) {
+  let faultExit: Promise<void> | undefined;
+  const checkpointAndExitAfterFault = (reason: unknown): void => {
+    if (faultExit) return;
+    faultExit = (async () => {
+      console.error(`[wallet] runtime fault: ${reason instanceof Error ? reason.message : String(reason)}`);
+      await activeWalletForRecovery?.saveCheckpoint().catch((checkpointError: unknown) => {
+        console.error(`[wallet] checkpoint recovery failed: ${checkpointError instanceof Error ? checkpointError.message : String(checkpointError)}`);
+      });
+      process.exit(1);
+    })();
+  };
+  process.once("uncaughtException", checkpointAndExitAfterFault);
+  process.once("unhandledRejection", checkpointAndExitAfterFault);
   const command = process.argv[2] as LifecycleCommand | undefined;
   try {
     if (!command || !["deploy", "attest", "revoke", "inspect", "status"].includes(command)) {
