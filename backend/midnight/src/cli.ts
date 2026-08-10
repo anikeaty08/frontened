@@ -22,7 +22,7 @@ import { getNetworkConfig } from "./network.js";
 import { buildProviders } from "./providers.js";
 import { AquaWalletProvider } from "./wallet.js";
 
-const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".env");
+const envFile = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", ".env");
 // A deployer can be launched from a shell that still has stale secret values.
 // The project file is the source of truth for this worker, so intentionally
 // override inherited values rather than using loadEnvFile's non-overriding merge.
