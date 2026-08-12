@@ -3,6 +3,7 @@ import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import Architecture from "@/components/Architecture";
 import LatestSnapshot from "@/components/LatestSnapshot";
+import HeroTwinkle from "@/components/HeroTwinkle";
 
 const proofPoints = [
   {
@@ -27,6 +28,7 @@ export default function Home() {
     <AppShell>
       <section className="aqua-glow relative overflow-hidden border-b aqua-divider">
         <div className="aqua-grid absolute inset-0 opacity-[.16] [mask-image:linear-gradient(to_bottom,black,transparent_86%)]" />
+        <HeroTwinkle variant="field" />
         <div className="relative mx-auto grid min-h-[calc(100svh-4rem)] max-w-[92rem] items-center gap-14 px-5 py-20 lg:grid-cols-12 lg:px-8">
           <div className="aqua-rise lg:col-span-7">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--muted)]">
