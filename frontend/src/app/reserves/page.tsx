@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import SnapshotTable from "@/components/SnapshotTable";

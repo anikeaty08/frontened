@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "./Icon";
 
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">(() =>

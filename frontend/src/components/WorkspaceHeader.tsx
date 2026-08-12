@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Icon } from "@iconify/react";
+import { Icon } from "./Icon";
 import { clearSession } from "@/lib/api";
 
 export default function WorkspaceHeader({

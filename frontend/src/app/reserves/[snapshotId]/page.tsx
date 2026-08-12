@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Icon } from "@iconify/react";
+import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import SnapshotDetail from "@/components/SnapshotDetail";

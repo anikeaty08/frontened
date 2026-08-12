@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "./Icon";
 import AquaReserveLogo from "./AquaReserveLogo";
 import ThemeToggle from "./ThemeToggle";
 

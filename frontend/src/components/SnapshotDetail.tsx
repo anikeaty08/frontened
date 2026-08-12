@@ -1,4 +1,4 @@
-import { Icon } from "@iconify/react";
+import { Icon } from "./Icon";
 import { compactHash, formatDate } from "@/lib/api";
 import type { PublicSnapshot } from "@/lib/types";
 import StatusBadge from "./StatusBadge";

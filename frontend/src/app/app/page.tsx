@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@iconify/react";
+import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import { createSession } from "@/lib/api";

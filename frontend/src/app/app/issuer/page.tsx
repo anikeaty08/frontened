@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import LifecycleTimeline from "@/components/LifecycleTimeline";
 import SnapshotTable from "@/components/SnapshotTable";

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Icon } from "@iconify/react";
+import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import Architecture from "@/components/Architecture";
 import LatestSnapshot from "@/components/LatestSnapshot";

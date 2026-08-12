@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "./Icon";
 import { apiRequest, compactHash, formatDate } from "@/lib/api";
 import type { PublicSnapshot, SnapshotListResponse } from "@/lib/types";
 import StatusBadge from "./StatusBadge";
