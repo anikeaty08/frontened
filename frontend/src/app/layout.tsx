@@ -18,8 +18,6 @@ export const metadata: Metadata = {
   icons: { icon: "/aquareserve-icon.png", apple: "/aquareserve-icon.png" },
 };
 
-const themeScript = `(()=>{try{const t=localStorage.getItem('aqua-theme');document.documentElement.dataset.theme=t==='light'?'light':'dark'}catch{document.documentElement.dataset.theme='dark'}})()`;
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -27,11 +25,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} ${mono.variable}`}
+      data-theme="dark"
       suppressHydrationWarning
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body>{children}</body>
     </html>
   );

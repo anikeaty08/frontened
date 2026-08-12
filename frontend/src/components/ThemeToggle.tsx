@@ -1,20 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { Icon } from "./Icon";
 
+type Theme = "dark" | "light";
+
+const themeEvent = "aqua-theme-change";
+const getServerTheme = (): Theme => "dark";
+const getTheme = (): Theme =>
+  localStorage.getItem("aqua-theme") === "light" ? "light" : "dark";
+const subscribe = (onStoreChange: () => void) => {
+  window.addEventListener(themeEvent, onStoreChange);
+  window.addEventListener("storage", onStoreChange);
+  return () => {
+    window.removeEventListener(themeEvent, onStoreChange);
+    window.removeEventListener("storage", onStoreChange);
+  };
+};
+
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<"dark" | "light">(() =>
-    typeof document !== "undefined" &&
-    document.documentElement.dataset.theme === "light"
-      ? "light"
-      : "dark",
-  );
+  const theme = useSyncExternalStore(subscribe, getTheme, getServerTheme);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
   const toggle = () => {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
     document.documentElement.dataset.theme = next;
     localStorage.setItem("aqua-theme", next);
+    window.dispatchEvent(new Event(themeEvent));
   };
   return (
     <button
