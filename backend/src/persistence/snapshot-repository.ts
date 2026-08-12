@@ -2,6 +2,19 @@ import type { EncryptedReceipt, ReserveSnapshot, SnapshotEvent, StoredSnapshot }
 
 export type CreateSnapshotResult = { created: true } | { created: false; snapshot: ReserveSnapshot };
 
+export interface SnapshotListOptions {
+  limit: number;
+  cursor: string | null;
+  issuerId?: string;
+  attesterId?: string;
+  publicOnly?: boolean;
+}
+
+export interface SnapshotListResult {
+  snapshots: ReserveSnapshot[];
+  nextCursor: string | null;
+}
+
 export class SnapshotRevisionConflictError extends Error {
   public constructor(snapshotId: string) {
     super(`Snapshot ${snapshotId} was updated concurrently`);
@@ -12,9 +25,11 @@ export interface SnapshotRepository {
   create(snapshot: ReserveSnapshot, receipts: Map<string, EncryptedReceipt>, event: SnapshotEvent): Promise<CreateSnapshotResult>;
   findById(snapshotId: string): Promise<ReserveSnapshot | null>;
   findByIdempotencyKey(idempotencyKeyDigest: string): Promise<ReserveSnapshot | null>;
+  listSnapshots(options: SnapshotListOptions): Promise<SnapshotListResult>;
   getReceipt(snapshotId: string, customerReference: string): Promise<EncryptedReceipt | null>;
   update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<ReserveSnapshot>;
   listEvents(snapshotId: string): Promise<SnapshotEvent[]>;
+  healthCheck(): Promise<void>;
 }
 
 const cloneSnapshot = (snapshot: ReserveSnapshot): ReserveSnapshot => structuredClone(snapshot);
@@ -23,6 +38,7 @@ const cloneEvent = (event: SnapshotEvent): SnapshotEvent => structuredClone(even
 const normalizeSnapshot = (snapshot: ReserveSnapshot): ReserveSnapshot => ({
   ...snapshot,
   revision: Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 ? snapshot.revision : 0,
+  lifecycleOperation: snapshot.lifecycleOperation ?? null,
 });
 
 export class InMemorySnapshotRepository implements SnapshotRepository {
@@ -77,7 +93,24 @@ export class InMemorySnapshotRepository implements SnapshotRepository {
     return cloneSnapshot(next);
   }
 
+  public async listSnapshots(options: SnapshotListOptions): Promise<SnapshotListResult> {
+    const ordered = [...this.snapshots.values()]
+      .map((stored) => normalizeSnapshot(cloneSnapshot(stored.snapshot)))
+      .filter((snapshot) => !options.issuerId || snapshot.issuerId === options.issuerId)
+      .filter((snapshot) => !options.attesterId || snapshot.attesterId === options.attesterId)
+      .filter((snapshot) => !options.publicOnly || snapshot.anchored.status === "CONFIRMED")
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
+    const start = options.cursor ? Math.max(0, ordered.findIndex((snapshot) => snapshot.id === options.cursor) + 1) : 0;
+    const page = ordered.slice(start, start + options.limit);
+    return {
+      snapshots: page,
+      nextCursor: ordered.length > start + page.length ? page.at(-1)?.id ?? null : null,
+    };
+  }
+
   public async listEvents(snapshotId: string): Promise<SnapshotEvent[]> {
     return this.snapshots.get(snapshotId)?.events.map(cloneEvent) ?? [];
   }
+
+  public async healthCheck(): Promise<void> {}
 }

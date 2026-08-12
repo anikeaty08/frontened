@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import { ZodError, z } from "zod";
 import type { AquaConfig } from "../config.js";
 import { constantTimeEqual } from "../crypto/hash.js";
@@ -31,6 +33,11 @@ const createSnapshotBody = z.object({
     .max(100_000),
 });
 const revokeBody = z.object({ reason: z.string().min(10).max(500) });
+const reconcileBody = z.object({ abandonDeployment: z.boolean().optional().default(false) });
+const listQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  cursor: z.string().uuid().optional(),
+});
 
 export interface BuildAppOptions {
   config: AquaConfig;
@@ -70,6 +77,20 @@ export const buildApp = async ({ config, repository, anchorService, logger = fal
   const snapshots = new SnapshotService(repository, anchorService, config);
 
   app.get("/health", async () => ({ status: "ok", service: "aqua-reserve-api", environment: config.environment }));
+  app.get("/ready", async (_request, reply) => {
+    try {
+      await repository.healthCheck();
+      return { status: "ready", service: "aqua-reserve-api", persistence: "available", anchorMode: config.anchorMode };
+    } catch {
+      return reply.code(503).send({ status: "not-ready", service: "aqua-reserve-api", persistence: "unavailable", anchorMode: config.anchorMode });
+    }
+  });
+  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(rateLimit, {
+    max: config.environment === "production" ? 120 : 1_000,
+    timeWindow: "1 minute",
+    keyGenerator: (request) => request.ip,
+  });
 
   app.post("/v1/snapshots", async (request, reply) => {
     const principal = requirePrincipal(request, config);
@@ -92,6 +113,36 @@ export const buildApp = async ({ config, repository, anchorService, logger = fal
     return { snapshot: await snapshots.revoke(principal, snapshotId, reason) };
   });
 
+  app.get("/v1/issuer/snapshots/by-idempotency-key", async (request) => {
+    const principal = requirePrincipal(request, config);
+    const idempotencyKey = parse(idempotencyKeyHeader, request.headers["idempotency-key"]);
+    return { snapshot: await snapshots.findByIdempotencyKey(principal, idempotencyKey) };
+  });
+
+  app.get("/v1/public/snapshots", async (request) => {
+    const { limit, cursor } = parse(listQuery, request.query);
+    return snapshots.listPublic(limit ?? 20, cursor ?? null);
+  });
+
+  app.get("/v1/issuer/snapshots", async (request) => {
+    const principal = requirePrincipal(request, config);
+    const { limit, cursor } = parse(listQuery, request.query);
+    return snapshots.listForIssuer(principal, limit ?? 20, cursor ?? null);
+  });
+
+  app.get("/v1/attester/snapshots", async (request) => {
+    const principal = requirePrincipal(request, config);
+    const { limit, cursor } = parse(listQuery, request.query);
+    return snapshots.listForAttester(principal, limit ?? 20, cursor ?? null);
+  });
+
+  app.post("/v1/snapshots/:snapshotId/reconcile", async (request) => {
+    const principal = requirePrincipal(request, config);
+    const { snapshotId } = parse(snapshotIdParams, request.params);
+    const { abandonDeployment } = parse(reconcileBody, request.body ?? {});
+    return { snapshot: await snapshots.reconcile(principal, snapshotId, abandonDeployment ?? false) };
+  });
+
   app.get("/v1/public/snapshots/:snapshotId", async (request) => {
     const { snapshotId } = parse(snapshotIdParams, request.params);
     return { snapshot: await snapshots.publicSnapshot(snapshotId) };
@@ -101,6 +152,12 @@ export const buildApp = async ({ config, repository, anchorService, logger = fal
     const principal = requirePrincipal(request, config);
     const { snapshotId } = parse(snapshotIdParams, request.params);
     return { verification: await snapshots.verifyCustomer(principal, snapshotId) };
+  });
+
+  app.get("/v1/snapshots/:snapshotId/events", async (request) => {
+    const principal = requirePrincipal(request, config);
+    const { snapshotId } = parse(snapshotIdParams, request.params);
+    return { events: await snapshots.events(principal, snapshotId) };
   });
 
   app.setErrorHandler((error, _request, reply) => {

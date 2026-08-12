@@ -161,6 +161,7 @@ export class SnapshotService {
       reserveTotalBaseUnits: reserveTotal.toString(),
       anchored: anchor,
       signatures: { issuer: this.config.issuerSigner.sign(issuerPayload), attester: null },
+      lifecycleOperation: null,
       attestedAt: null,
       revokedAt: null,
       revokedBy: null,
@@ -188,6 +189,39 @@ export class SnapshotService {
     return this.toPublic(await this.ensureDeployment(snapshot));
   }
 
+  public async findByIdempotencyKey(principal: Principal, idempotencyKey: string): Promise<PublicSnapshot> {
+    roleRequired(principal, "ISSUER");
+    const digest = hmacSha256(this.config.masterKey, `aqua:publish-idempotency-key:v1|${principal.id}|${idempotencyKey}`);
+    const snapshot = await this.repository.findByIdempotencyKey(digest);
+    if (!snapshot || snapshot.issuerId !== principal.id) throw notFound("No snapshot exists for this issuer and Idempotency-Key");
+    return this.toPublic(snapshot);
+  }
+
+  public async listPublic(limit: number, cursor: string | null): Promise<{ snapshots: PublicSnapshot[]; nextCursor: string | null }> {
+    const page = await this.repository.listSnapshots({ limit, cursor, publicOnly: true });
+    return { snapshots: page.snapshots.map((snapshot) => this.toPublic(snapshot)), nextCursor: page.nextCursor };
+  }
+
+  public async listForIssuer(principal: Principal, limit: number, cursor: string | null): Promise<{ snapshots: PublicSnapshot[]; nextCursor: string | null }> {
+    roleRequired(principal, "ISSUER");
+    const page = await this.repository.listSnapshots({ limit, cursor, issuerId: principal.id });
+    return { snapshots: page.snapshots.map((snapshot) => this.toPublic(snapshot)), nextCursor: page.nextCursor };
+  }
+
+  public async listForAttester(principal: Principal, limit: number, cursor: string | null): Promise<{ snapshots: PublicSnapshot[]; nextCursor: string | null }> {
+    roleRequired(principal, "ATTESTER");
+    const page = await this.repository.listSnapshots({ limit, cursor, attesterId: principal.id });
+    return { snapshots: page.snapshots.map((snapshot) => this.toPublic(snapshot)), nextCursor: page.nextCursor };
+  }
+
+  public async events(principal: Principal, snapshotId: string): Promise<SnapshotEvent[]> {
+    const snapshot = await this.requireSnapshot(snapshotId);
+    const authorisedIssuer = principal.roles.includes("ISSUER") && principal.id === snapshot.issuerId;
+    const authorisedAttester = principal.roles.includes("ATTESTER") && principal.id === snapshot.attesterId;
+    if (!authorisedIssuer && !authorisedAttester) throw forbidden("Only the assigned issuer or attester may view lifecycle events");
+    return this.repository.listEvents(snapshotId);
+  }
+
   public async attest(principal: Principal, snapshotId: string): Promise<PublicSnapshot> {
     roleRequired(principal, "ATTESTER");
     let snapshot = await this.requireSnapshot(snapshotId);
@@ -196,20 +230,27 @@ export class SnapshotService {
     if (this.currentStatus(snapshot) === "EXPIRED") throw invalidState("An expired snapshot cannot be attested");
     if (!this.hasValidIssuerSignature(snapshot)) throw invalidState("The issuer evidence signature is invalid");
     this.requireConfirmedDeployment(snapshot);
+    if (snapshot.lifecycleOperation) throw invalidState("A Midnight lifecycle operation is already in progress or needs reconciliation");
 
-    snapshot.status = BigInt(snapshot.reserveTotalBaseUnits) >= BigInt(snapshot.liabilityTotalBaseUnits) ? "VERIFIED" : "SHORTFALL";
-    const transaction = await this.anchorService.attest({
-      snapshotId: snapshot.id,
-      contractAddress: snapshot.anchored.contractAddress ?? "",
-      attestedAt: new Date().toISOString(),
-    });
-    snapshot.attestedAt = transaction.recordedAt;
-    snapshot.signatures.attester = this.config.attesterSigner.sign(this.attesterPayload(snapshot));
-    snapshot = await this.repository.update(
+    const startedAt = new Date().toISOString();
+    snapshot = await this.claimLifecycle(
       snapshot,
-      this.event(snapshot.id, "ATTESTED", principal.id, { result: snapshot.status, transactionId: transaction.transactionId ?? "development" }),
+      { kind: "ATTESTING", actorId: principal.id, startedAt, reason: null },
+      this.event(snapshot.id, "ATTESTATION_STARTED", principal.id, {}),
     );
-    return this.toPublic(snapshot);
+    const result = BigInt(snapshot.reserveTotalBaseUnits) >= BigInt(snapshot.liabilityTotalBaseUnits) ? "VERIFIED" : "SHORTFALL";
+    try {
+      const transaction = await this.anchorService.attest({
+        snapshotId: snapshot.id,
+        contractAddress: snapshot.anchored.contractAddress ?? "",
+        attestedAt: startedAt,
+      });
+      const chainAttestedAt = new Date(Math.floor(Date.parse(startedAt) / 1_000) * 1_000).toISOString();
+      return this.toPublic(await this.finalizeAttestation(snapshot, result, chainAttestedAt, principal.id, transaction.transactionId ?? "development"));
+    } catch (error) {
+      await this.markLifecycleUncertain(snapshot, "ATTEST_UNCERTAIN", "ATTESTATION_UNCERTAIN", principal.id);
+      throw error;
+    }
   }
 
   public async revoke(principal: Principal, snapshotId: string, reason: string): Promise<PublicSnapshot> {
@@ -219,20 +260,74 @@ export class SnapshotService {
     if (snapshot.revokedAt) throw invalidState("A snapshot is already revoked");
     if (!reason.trim()) throw validation("A revocation reason is required");
     this.requireConfirmedDeployment(snapshot);
+    if (snapshot.lifecycleOperation) throw invalidState("A Midnight lifecycle operation is already in progress or needs reconciliation");
 
-    const transaction = await this.anchorService.revoke({
-      snapshotId: snapshot.id,
-      contractAddress: snapshot.anchored.contractAddress ?? "",
-      reason,
-    });
-    snapshot.revokedAt = transaction.recordedAt;
-    snapshot.revokedBy = principal.id;
-    snapshot.revocationReason = reason;
-    snapshot = await this.repository.update(
+    const startedAt = new Date().toISOString();
+    snapshot = await this.claimLifecycle(
       snapshot,
-      this.event(snapshot.id, "REVOKED", principal.id, { transactionId: transaction.transactionId ?? "development" }),
+      { kind: "REVOKING", actorId: principal.id, startedAt, reason },
+      this.event(snapshot.id, "REVOCATION_STARTED", principal.id, {}),
     );
-    return this.toPublic(snapshot);
+    try {
+      const transaction = await this.anchorService.revoke({
+        snapshotId: snapshot.id,
+        contractAddress: snapshot.anchored.contractAddress ?? "",
+        reason,
+      });
+      return this.toPublic(await this.finalizeRevocation(snapshot, reason, principal.id, transaction.recordedAt, transaction.transactionId ?? "development"));
+    } catch (error) {
+      await this.markLifecycleUncertain(snapshot, "REVOKE_UNCERTAIN", "REVOCATION_UNCERTAIN", principal.id);
+      throw error;
+    }
+  }
+
+  public async reconcile(principal: Principal, snapshotId: string, abandonDeployment: boolean): Promise<PublicSnapshot> {
+    const snapshot = await this.requireSnapshot(snapshotId);
+    if (!principal.roles.includes("ISSUER") || principal.id !== snapshot.issuerId) {
+      throw forbidden("Only the snapshot issuer may reconcile its Midnight lifecycle");
+    }
+    if (!snapshot.anchored.contractAddress) {
+      if (snapshot.anchored.status !== "DEPLOYING") return this.toPublic(snapshot);
+      if (!abandonDeployment) {
+        throw invalidState("The deployment has no recorded contract address; explicit abandonment is required after operator chain reconciliation");
+      }
+      return this.toPublic(
+        await this.repository.update(
+          {
+            ...snapshot,
+            anchored: { ...snapshot.anchored, status: "FAILED", failure: "MIDNIGHT_DEPLOYMENT_ABANDONED", recordedAt: new Date().toISOString() },
+          },
+          this.event(snapshot.id, "DEPLOYMENT_ABANDONED", principal.id, {}),
+        ),
+      );
+    }
+
+    const chain = await this.anchorService.read(snapshot.anchored.contractAddress);
+    this.assertChainMatchesSnapshot(snapshot, chain);
+    if (chain.status === "REVOKED") {
+      const reason = snapshot.lifecycleOperation?.reason ?? snapshot.revocationReason;
+      if (!reason) throw invalidState("The chain is revoked but the backend has no authorised revocation reason to reconcile");
+      return this.toPublic(await this.finalizeRevocation(snapshot, reason, snapshot.lifecycleOperation?.actorId ?? principal.id, new Date().toISOString(), "reconciled-from-chain"));
+    }
+    if (chain.status === "VERIFIED" || chain.status === "SHORTFALL") {
+      const recordedAt = chain.attestedAt || new Date().toISOString();
+      return this.toPublic(await this.finalizeAttestation(snapshot, chain.status, recordedAt, snapshot.lifecycleOperation?.actorId ?? snapshot.attesterId, "reconciled-from-chain"));
+    }
+    if (snapshot.lifecycleOperation?.kind === "ATTESTING" || snapshot.lifecycleOperation?.kind === "REVOKING") {
+      const staleAfterMs = 15 * 60 * 1_000;
+      if (Date.now() - Date.parse(snapshot.lifecycleOperation.startedAt) < staleAfterMs) {
+        throw invalidState("The lifecycle operation is still in progress; reconcile after its 15-minute safety window or when it is marked uncertain");
+      }
+    }
+    if (snapshot.lifecycleOperation || snapshot.anchored.failure) {
+      return this.toPublic(
+        await this.repository.update(
+          { ...snapshot, lifecycleOperation: null, anchored: { ...snapshot.anchored, failure: null, recordedAt: new Date().toISOString() } },
+          this.event(snapshot.id, "CHAIN_RECONCILED", principal.id, { chainStatus: chain.status }),
+        ),
+      );
+    }
+    return this.toPublic(snapshot, chain.status);
   }
 
   public async publicSnapshot(snapshotId: string): Promise<PublicSnapshot> {
@@ -367,6 +462,60 @@ export class SnapshotService {
     };
   }
 
+  private async claimLifecycle(
+    snapshot: ReserveSnapshot,
+    operation: NonNullable<ReserveSnapshot["lifecycleOperation"]>,
+    event: SnapshotEvent,
+  ): Promise<ReserveSnapshot> {
+    try {
+      return await this.repository.update({ ...snapshot, lifecycleOperation: operation }, event);
+    } catch (error) {
+      if (error instanceof SnapshotRevisionConflictError) {
+        throw invalidState("A Midnight lifecycle operation is already in progress or needs reconciliation");
+      }
+      throw error;
+    }
+  }
+
+  private async markLifecycleUncertain(
+    snapshot: ReserveSnapshot,
+    kind: "ATTEST_UNCERTAIN" | "REVOKE_UNCERTAIN",
+    eventType: Extract<SnapshotEvent["type"], "ATTESTATION_UNCERTAIN" | "REVOCATION_UNCERTAIN">,
+    actorId: string,
+  ): Promise<void> {
+    const current = await this.requireSnapshot(snapshot.id);
+    if (!current.lifecycleOperation) return;
+    await this.repository.update(
+      { ...current, lifecycleOperation: { ...current.lifecycleOperation, kind } },
+      this.event(current.id, eventType, actorId, {}),
+    );
+  }
+
+  private async finalizeAttestation(
+    snapshot: ReserveSnapshot,
+    result: Extract<ReserveSnapshot["status"], "VERIFIED" | "SHORTFALL">,
+    attestedAt: string,
+    actorId: string,
+    transactionId: string,
+  ): Promise<ReserveSnapshot> {
+    const next = { ...snapshot, status: result, attestedAt, lifecycleOperation: null };
+    next.signatures = { ...next.signatures, attester: this.config.attesterSigner.sign(this.attesterPayload(next)) };
+    return this.repository.update(next, this.event(next.id, "ATTESTED", actorId, { result, transactionId }));
+  }
+
+  private async finalizeRevocation(
+    snapshot: ReserveSnapshot,
+    reason: string,
+    actorId: string,
+    revokedAt: string,
+    transactionId: string,
+  ): Promise<ReserveSnapshot> {
+    return this.repository.update(
+      { ...snapshot, revokedAt, revokedBy: actorId, revocationReason: reason, lifecycleOperation: null },
+      this.event(snapshot.id, "REVOKED", actorId, { transactionId }),
+    );
+  }
+
   private anchorPayload(snapshot: ReserveSnapshot): AnchorPayload {
     return {
       snapshotId: snapshot.id,
@@ -383,6 +532,9 @@ export class SnapshotService {
 
   private async ensureDeployment(snapshot: ReserveSnapshot): Promise<ReserveSnapshot> {
     if (snapshot.anchored.status === "CONFIRMED") return snapshot;
+    if (snapshot.anchored.status === "FAILED") {
+      throw invalidState("This snapshot deployment was abandoned; publish a new snapshot with a new Idempotency-Key");
+    }
     if (snapshot.anchored.status === "DEPLOYING") {
       throw invalidState("Midnight deployment is already in progress or needs operator reconciliation");
     }
@@ -449,6 +601,14 @@ export class SnapshotService {
 
   private assertChainMatchesSnapshot(snapshot: ReserveSnapshot, chain: import("../domain/types.js").ChainState): void {
     const expectedSnapshotIdentifier = sha256(`aqua:snapshot-id:v1|${snapshot.id}`);
+    // Compact stores the expiry as whole Unix seconds, while the API accepts
+    // ISO timestamps with milliseconds. Compare the exact value committed to
+    // the contract rather than the higher-precision source representation.
+    const expectedExpiresAt = new Date(Math.floor(Date.parse(snapshot.expiresAt) / 1_000) * 1_000).toISOString();
+    const revocationReason = snapshot.lifecycleOperation?.reason ?? snapshot.revocationReason;
+    const expectedRevocationReasonHash = revocationReason
+      ? sha256(`aqua:revocation-reason:v1|${revocationReason}`)
+      : null;
     if (
       chain.snapshotIdentifier !== expectedSnapshotIdentifier ||
       chain.scopeManifestHash !== snapshot.scopeManifestHash ||
@@ -458,7 +618,8 @@ export class SnapshotService {
       chain.coverageEvidenceCommitment !== snapshot.coverageEvidenceCommitment ||
       chain.liabilityEvidenceCommitment !== snapshot.anchored.proofCommitments?.liabilityEvidenceCommitment ||
       chain.reserveTotalCommitment !== snapshot.anchored.proofCommitments?.reserveTotalCommitment ||
-      chain.expiresAt !== snapshot.expiresAt
+      chain.expiresAt !== expectedExpiresAt ||
+      (chain.status === "REVOKED" && expectedRevocationReasonHash !== null && chain.revocationReasonHash !== expectedRevocationReasonHash)
     ) {
       throw new Error("Midnight public state does not match the stored snapshot commitments");
     }

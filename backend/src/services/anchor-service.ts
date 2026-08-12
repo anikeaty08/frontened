@@ -173,6 +173,11 @@ const required = (response: Record<string, string>, name: string): string => {
   return value;
 };
 
+const present = (response: Record<string, string>, name: string): string => {
+  if (!(name in response) || typeof response[name] !== "string") throw new Error(`Midnight lifecycle response is missing ${name}`);
+  return response[name];
+};
+
 const asStatus = (value: string): Extract<SnapshotStatus, "PENDING_ATTESTATION" | "VERIFIED" | "SHORTFALL" | "REVOKED"> => {
   if (value === "PENDING_ATTESTATION" || value === "VERIFIED" || value === "SHORTFALL" || value === "REVOKED") return value;
   throw new Error(`Midnight lifecycle returned an unsupported status: ${value}`);
@@ -240,7 +245,7 @@ export class MidnightDirectAnchorService implements AnchorService {
       liabilityEvidenceCommitment: required(response, "liabilityEvidenceCommitment"),
       reserveTotalCommitment: required(response, "reserveTotalCommitment"),
       expiresAt: required(response, "expiresAt"),
-      attestedAt: required(response, "attestedAt"),
+      attestedAt: present(response, "attestedAt"),
       revocationReasonHash: required(response, "revocationReasonHash"),
     };
   }

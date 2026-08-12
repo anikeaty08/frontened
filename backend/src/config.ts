@@ -110,6 +110,7 @@ export const loadConfig = (environmentOverride?: AquaConfig["environment"]): Aqu
       throw new Error("AQUA_AUTH_TOKENS_JSON must be an object keyed by token");
     }
     for (const [token, principal] of Object.entries(parsed)) {
+      if (token.length < 32) throw new Error("AQUA_AUTH_TOKENS_JSON tokens must contain at least 32 characters");
       const candidate = principal as { id?: unknown; roles?: unknown };
       if (typeof candidate.id !== "string" || !Array.isArray(candidate.roles)) {
         throw new Error("AQUA_AUTH_TOKENS_JSON principals require id and roles");
@@ -117,12 +118,21 @@ export const loadConfig = (environmentOverride?: AquaConfig["environment"]): Aqu
       if (!candidate.roles.every((role) => role === "ISSUER" || role === "ATTESTER" || role === "CUSTOMER")) {
         throw new Error("AQUA_AUTH_TOKENS_JSON contains an unsupported role");
       }
+      if (candidate.roles.length === 0 || new Set(candidate.roles).size !== candidate.roles.length) {
+        throw new Error("AQUA_AUTH_TOKENS_JSON principals require at least one unique role");
+      }
       tokens.set(token, { id: candidate.id, roles: candidate.roles as Principal["roles"] });
     }
   }
 
   if (environment === "production" && tokens.size === 0) {
     throw new Error("At least one authenticated principal is required in production");
+  }
+  if (environment === "production") {
+    const principals = [...tokens.values()];
+    if (!principals.some((principal) => principal.roles.includes("ISSUER"))) throw new Error("Production authentication requires an issuer principal");
+    if (!principals.some((principal) => principal.roles.includes("ATTESTER"))) throw new Error("Production authentication requires an attester principal");
+    if (!principals.some((principal) => principal.roles.includes("CUSTOMER"))) throw new Error("Production authentication requires a customer principal");
   }
 
   const rawAnchorMode = process.env.MIDNIGHT_ANCHOR_MODE ?? "development";

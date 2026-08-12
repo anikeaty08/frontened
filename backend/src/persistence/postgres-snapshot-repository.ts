@@ -4,13 +4,14 @@ import { readFileSync } from "node:fs";
 import { rootCertificates } from "node:tls";
 import type { RdsIamConfig } from "../config.js";
 import type { EncryptedReceipt, ReserveSnapshot, SnapshotEvent } from "../domain/types.js";
-import { SnapshotRevisionConflictError, type SnapshotRepository } from "./snapshot-repository.js";
+import { SnapshotRevisionConflictError, type SnapshotListOptions, type SnapshotListResult, type SnapshotRepository } from "./snapshot-repository.js";
 import { runMigrations } from "./migrations.js";
 
 const { Pool } = pg;
 const normalizeSnapshot = (snapshot: ReserveSnapshot): ReserveSnapshot => ({
   ...snapshot,
   revision: Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 ? snapshot.revision : 0,
+  lifecycleOperation: snapshot.lifecycleOperation ?? null,
 });
 
 export class PostgresSnapshotRepository implements SnapshotRepository {
@@ -134,6 +135,39 @@ export class PostgresSnapshotRepository implements SnapshotRepository {
       [snapshotId],
     );
     return result.rows.map((row) => row.event);
+  }
+
+  public async listSnapshots(options: SnapshotListOptions): Promise<SnapshotListResult> {
+    const values: unknown[] = [];
+    const where: string[] = [];
+    const bind = (value: unknown): string => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+    if (options.issuerId) where.push(`snapshot->>'issuerId' = ${bind(options.issuerId)}`);
+    if (options.attesterId) where.push(`snapshot->>'attesterId' = ${bind(options.attesterId)}`);
+    if (options.publicOnly) where.push(`snapshot->'anchored'->>'status' = 'CONFIRMED'`);
+    if (options.cursor) {
+      const cursor = await this.findById(options.cursor);
+      if (cursor) {
+        const createdAt = bind(cursor.createdAt);
+        const id = bind(cursor.id);
+        where.push(`((snapshot->>'createdAt') < ${createdAt} OR ((snapshot->>'createdAt') = ${createdAt} AND id::text < ${id}))`);
+      }
+    }
+    const limit = bind(options.limit + 1);
+    const result = await this.pool.query<{ snapshot: ReserveSnapshot }>(
+      `SELECT snapshot FROM aqua_snapshots ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+       ORDER BY snapshot->>'createdAt' DESC, id DESC LIMIT ${limit}`,
+      values,
+    );
+    const hasMore = result.rows.length > options.limit;
+    const snapshots = result.rows.slice(0, options.limit).map((row) => normalizeSnapshot(row.snapshot));
+    return { snapshots, nextCursor: hasMore ? snapshots.at(-1)?.id ?? null : null };
+  }
+
+  public async healthCheck(): Promise<void> {
+    await this.pool.query("SELECT 1");
   }
 
   public async close(): Promise<void> {

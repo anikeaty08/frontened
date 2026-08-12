@@ -56,13 +56,14 @@ const toBytes32 = (value: string, name: string): Uint8Array => {
   return Uint8Array.from(Buffer.from(value, "hex"));
 };
 const sha256Bytes = (value: string): Uint8Array => Uint8Array.from(createHash("sha256").update(value).digest());
-const lifecycleCommitment = (payload: DeployInput): string =>
+export const lifecycleCommitment = (payload: DeployInput): string =>
   createHash("sha256")
     .update([
       "aqua:midnight-lifecycle:v1",
       payload.snapshotId,
       payload.scopeManifestHash,
       payload.liabilityCommitment,
+      payload.membershipRoot,
       payload.reserveEvidenceCommitment,
       payload.coverageEvidenceCommitment,
       payload.expiresAt,

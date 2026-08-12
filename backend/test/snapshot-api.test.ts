@@ -114,16 +114,23 @@ describe("Aqua Reserve Phase 1 API", () => {
           coverageEvidenceCommitment: deployedPayload.coverageEvidenceCommitment,
           liabilityEvidenceCommitment: "d".repeat(64),
           reserveTotalCommitment: "e".repeat(64),
-          expiresAt: deployedPayload.expiresAt,
+          expiresAt: new Date(Math.floor(Date.parse(deployedPayload.expiresAt) / 1_000) * 1_000).toISOString(),
           attestedAt: "2026-08-09T00:00:02.000Z",
-          revocationReasonHash: "a".repeat(64),
+          revocationReasonHash: createHash("sha256")
+            .update("aqua:revocation-reason:v1|Synthetic reserve evidence was intentionally replaced for this lifecycle test.")
+            .digest("hex"),
         };
       },
     };
     const config = loadConfig("test");
     const app = await buildApp({ config, repository: new InMemorySnapshotRepository(), anchorService: direct });
     apps.push(app);
-    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/snapshots",
+      headers: issuerHeaders,
+      payload: snapshotBody({ expiresAt: "2030-08-08T12:00:00.431Z" }),
+    });
     const snapshotId = created.json<{ snapshot: { id: string; anchor: { contractAddress: string } } }>().snapshot.id;
     expect(created.json<{ snapshot: { anchor: { contractAddress: string } } }>().snapshot.anchor.contractAddress).toBe("midnight-contract-abc");
     await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
@@ -192,6 +199,77 @@ describe("Aqua Reserve Phase 1 API", () => {
 
     releaseDeployment?.();
     expect((await first).statusCode).toBe(201);
+  });
+
+  it("reconciles an uncertain attestation from authoritative chain state without submitting twice", async () => {
+    const repository = new InMemorySnapshotRepository();
+    let deployedPayload: Parameters<AnchorService["deploy"]>[0] | undefined;
+    let chainStatus: "PENDING_ATTESTATION" | "VERIFIED" = "PENDING_ATTESTATION";
+    let attestCalls = 0;
+    const direct: AnchorService = {
+      prepare: (payload) => ({
+        mode: "MIDNIGHT_PREPROD", status: "PENDING", contractAddress: null, commitment: lifecycleCommitment(payload),
+        transactionId: null, recordedAt: "2026-08-09T00:00:00.000Z", failure: null, proofCommitments: null,
+      }),
+      deploy: async (payload) => {
+        deployedPayload = payload;
+        return {
+          mode: "MIDNIGHT_PREPROD", status: "CONFIRMED", contractAddress: "midnight-contract-reconcile",
+          commitment: lifecycleCommitment(payload), transactionId: "deploy-reconcile", recordedAt: "2026-08-09T00:00:01.000Z",
+          failure: null, proofCommitments: { liabilityEvidenceCommitment: "d".repeat(64), reserveTotalCommitment: "e".repeat(64) },
+        };
+      },
+      attest: async () => {
+        attestCalls += 1;
+        chainStatus = "VERIFIED";
+        throw new Error("Response lost after Midnight accepted the transaction");
+      },
+      revoke: async () => { throw new Error("not used"); },
+      read: async () => {
+        if (!deployedPayload) throw new Error("not deployed");
+        return {
+          contractAddress: "midnight-contract-reconcile", status: chainStatus,
+          snapshotIdentifier: createHash("sha256").update(`aqua:snapshot-id:v1|${deployedPayload.snapshotId}`).digest("hex"),
+          scopeManifestHash: deployedPayload.scopeManifestHash, liabilityCommitment: deployedPayload.liabilityCommitment,
+          membershipRoot: deployedPayload.membershipRoot, reserveEvidenceCommitment: deployedPayload.reserveEvidenceCommitment,
+          coverageEvidenceCommitment: deployedPayload.coverageEvidenceCommitment, liabilityEvidenceCommitment: "d".repeat(64),
+          reserveTotalCommitment: "e".repeat(64), expiresAt: new Date(Math.floor(Date.parse(deployedPayload.expiresAt) / 1_000) * 1_000).toISOString(),
+          attestedAt: "2026-08-09T00:00:02.000Z", revocationReasonHash: "a".repeat(64),
+        };
+      },
+    };
+    const config = loadConfig("test");
+    const app = await buildApp({ config, repository, anchorService: direct });
+    apps.push(app);
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+    expect((await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders })).statusCode).toBe(500);
+    expect((await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders })).statusCode).toBe(409);
+    const reconciled = await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/reconcile`, headers: issuerHeaders, payload: {} });
+    expect(reconciled.statusCode).toBe(200);
+    expect(reconciled.json<{ snapshot: { status: string; attesterSignature: string | null } }>().snapshot).toMatchObject({ status: "VERIFIED" });
+    expect(reconciled.json<{ snapshot: { attesterSignature: string | null } }>().snapshot.attesterSignature).not.toBeNull();
+    expect(attestCalls).toBe(1);
+  });
+
+  it("lets an issuer discover and explicitly abandon an unrecorded deployment", async () => {
+    const direct: AnchorService = {
+      prepare: (payload) => ({ mode: "MIDNIGHT_PREPROD", status: "PENDING", contractAddress: null, commitment: lifecycleCommitment(payload), transactionId: null, recordedAt: "2026-08-09T00:00:00.000Z", failure: null, proofCommitments: null }),
+      deploy: async () => { throw new Error("No transaction was submitted"); },
+      attest: async () => { throw new Error("not used"); }, revoke: async () => { throw new Error("not used"); }, read: async () => { throw new Error("not used"); },
+    };
+    const config = loadConfig("test");
+    const app = await buildApp({ config, repository: new InMemorySnapshotRepository(), anchorService: direct });
+    apps.push(app);
+    const headers = { authorization: "Bearer issuer-demo-token", "idempotency-key": "abandon-deployment-key-0001" };
+    expect((await app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() })).statusCode).toBe(500);
+    const found = await app.inject({ method: "GET", url: "/v1/issuer/snapshots/by-idempotency-key", headers });
+    const snapshotId = found.json<{ snapshot: { id: string } }>().snapshot.id;
+    expect(found.json<{ snapshot: { anchor: { status: string } } }>().snapshot.anchor.status).toBe("DEPLOYING");
+    expect((await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/reconcile`, headers: issuerHeaders, payload: {} })).statusCode).toBe(409);
+    const abandoned = await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/reconcile`, headers: issuerHeaders, payload: { abandonDeployment: true } });
+    expect(abandoned.json<{ snapshot: { anchor: { status: string; failure: string } } }>().snapshot.anchor).toMatchObject({ status: "FAILED", failure: "MIDNIGHT_DEPLOYMENT_ABANDONED" });
+    expect((await app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() })).statusCode).toBe(409);
   });
 
   it("permits only the configured web application origin", async () => {
@@ -421,5 +499,28 @@ describe("Aqua Reserve Phase 1 API", () => {
     const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
     const attested = await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
     expect(attested.json<{ snapshot: { status: string } }>().snapshot.status).toBe("VERIFIED");
+  });
+
+  it("lists public, issuer, and attester snapshots with role-scoped lifecycle events", async () => {
+    const app = await makeApp();
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const snapshotId = created.json<{ snapshot: { id: string } }>().snapshot.id;
+
+    const publicList = await app.inject({ method: "GET", url: "/v1/public/snapshots?limit=10" });
+    expect(publicList.statusCode).toBe(200);
+    expect(publicList.json<{ snapshots: Array<{ id: string }>; nextCursor: string | null }>().snapshots.map((snapshot) => snapshot.id)).toContain(snapshotId);
+
+    const issuerList = await app.inject({ method: "GET", url: "/v1/issuer/snapshots", headers: issuerHeaders });
+    expect(issuerList.statusCode).toBe(200);
+    expect(issuerList.json<{ snapshots: Array<{ issuerId: string }> }>().snapshots.every((snapshot) => snapshot.issuerId === "issuer-demo")).toBe(true);
+
+    const attesterList = await app.inject({ method: "GET", url: "/v1/attester/snapshots", headers: attesterHeaders });
+    expect(attesterList.statusCode).toBe(200);
+    expect(attesterList.json<{ snapshots: Array<{ attesterId: string }> }>().snapshots.every((snapshot) => snapshot.attesterId === "attester-demo")).toBe(true);
+
+    const events = await app.inject({ method: "GET", url: `/v1/snapshots/${snapshotId}/events`, headers: attesterHeaders });
+    expect(events.statusCode).toBe(200);
+    expect(events.json<{ events: Array<{ type: string }> }>().events.map((event) => event.type)).toContain("CREATED");
+    expect((await app.inject({ method: "GET", url: `/v1/snapshots/${snapshotId}/events`, headers: customerHeaders(1) })).statusCode).toBe(403);
   });
 });
