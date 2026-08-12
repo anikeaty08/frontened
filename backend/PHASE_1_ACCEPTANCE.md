@@ -11,6 +11,7 @@ This audit covers the locked synthetic Phase 1 scope. It proves a Preprod implem
 | Private liabilities and reserve totals | Salted Merkle membership root, private sum/openings, encrypted AES-256-GCM receipts | Passed |
 | Zero-knowledge same-asset coverage result | Compact circuit binds private totals to public commitments and reveals only `VERIFIED` or `SHORTFALL` | Passed on Preprod |
 | Customer inclusion and omission | Customer 001 receipt verifies; customer 050 returns omitted without another customer's data | Passed against RDS-backed API |
+| Local reviewer connection | Development-only HttpOnly quick sessions connect issuer, attester, customer 001, and customer 050 without exposing bearer values; the route reports disabled under `next start` | Passed through the frontend same-origin proxy |
 | Issuer/attester separation | Separate bearer principals, Ed25519 evidence keys, and Compact authorization witnesses | Passed |
 | Public status and freshness | Public endpoint derives `EXPIRED` from authoritative chain expiry and verifies all stored commitments | Passed |
 | Shortfall | Snapshot `05c12769-824a-5b55-a0ed-2a5df01aa77e` is `SHORTFALL` on API and chain | Passed on Preprod |
@@ -47,6 +48,14 @@ npm --prefix midnight run check
 npm --prefix midnight test
 npm --prefix midnight audit --omit=dev
 npm run preflight:phase1 -- --production
+
+cd ../frontend
+npm run lint
+npm test
+npm run build
+npm audit --omit=dev
 ```
 
 The production preflight requires deployment-environment secrets. It prints only pass/fail labels and never secret values.
+
+The local Phase 1 demonstration does not require the public-production identity configuration. It runs the API in development with `AQUA_DEMO_AUTH=true`, RDS persistence, and `MIDNIGHT_ANCHOR_MODE=midnight-preprod`; public production promotion remains governed by `DEPLOYMENT.md`.

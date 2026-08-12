@@ -143,7 +143,15 @@ describe("Aqua Reserve Phase 1 API", () => {
     const publicView = await app.inject({ method: "GET", url: `/v1/public/snapshots/${snapshotId}` });
     expect(publicView.statusCode).toBe(200);
     expect(publicView.json<{ snapshot: { status: string } }>().snapshot.status).toBe("REVOKED");
-    expect(calls).toEqual(["deploy", "attest", "revoke", "read"]);
+    const publicList = await app.inject({ method: "GET", url: "/v1/public/snapshots?limit=10" });
+    expect(publicList.json<{ snapshots: Array<{ status: string }> }>().snapshots[0]?.status).toBe("REVOKED");
+    const customerView = await app.inject({
+      method: "GET",
+      url: `/v1/customer/snapshots/${snapshotId}/verification`,
+      headers: customerHeaders(1),
+    });
+    expect(customerView.json<{ verification: { currentStatus: string } }>().verification.currentStatus).toBe("REVOKED");
+    expect(calls).toEqual(["deploy", "attest", "revoke", "read", "read", "read"]);
   });
 
   it("claims a direct deployment before the chain call so retries cannot deploy twice", async () => {

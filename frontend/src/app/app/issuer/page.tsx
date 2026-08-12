@@ -16,6 +16,11 @@ import type {
 
 const tomorrow = () => new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 const now = () => new Date().toISOString();
+const syntheticLiabilities = () =>
+  Array.from({ length: 25 }, (_, index) => ({
+    customerId: `customer-${String(index + 1).padStart(3, "0")}`,
+    balanceBaseUnits: String((index + 1) * 100_000),
+  }));
 
 export default function IssuerWorkspace() {
   const [snapshots, setSnapshots] = useState<PublicSnapshot[]>([]);
@@ -168,6 +173,21 @@ export default function IssuerWorkspace() {
         ).snapshot,
       "Existing publication recovered without another deployment.",
     );
+  };
+  const loadSyntheticExample = () => {
+    setForm((current) => ({
+      ...current,
+      idempotencyKey: `aqua-${crypto.randomUUID()}`,
+      issuerId: "issuer-demo",
+      attesterId: "attester-demo",
+      cutoffAt: now().slice(0, 16),
+      expiresAt: tomorrow().slice(0, 16),
+      reserveTotalBaseUnits: "33500000",
+      reserveEvidenceReference: `synthetic-reserve-evidence-${new Date().toISOString()}`,
+      liabilities: JSON.stringify(syntheticLiabilities(), null, 2),
+    }));
+    setError(null);
+    setNotice("Loaded the 25-customer covered Phase 1 scenario. Lower the reserve total below 32,500,000 to demonstrate SHORTFALL.");
   };
   return (
     <AppShell>
@@ -335,6 +355,14 @@ export default function IssuerWorkspace() {
             <h2 className="mt-4 text-xl font-semibold">
               Publish reserve evidence
             </h2>
+            <button
+              type="button"
+              onClick={loadSyntheticExample}
+              className="aqua-button aqua-button-secondary mt-5 w-full"
+            >
+              <Icon icon="solar:test-tube-linear" />
+              Load 25-customer Phase 1 example
+            </button>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <label className="text-xs text-[var(--muted)]">
                 Issuer ID

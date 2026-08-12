@@ -10,10 +10,22 @@ import StatusBadge from "./StatusBadge";
 export default function LatestSnapshot() {
   const [snapshot, setSnapshot] = useState<PublicSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   useEffect(() => {
+    let active = true;
     apiRequest<SnapshotListResponse>("/v1/public/snapshots?limit=1")
-      .then((data) => setSnapshot(data.snapshots[0] ?? null))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        if (active) setSnapshot(data.snapshots[0] ?? null);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
   return (
     <div className="aqua-panel rounded-2xl p-5 sm:p-6">
@@ -33,6 +45,10 @@ export default function LatestSnapshot() {
         <div className="space-y-4 py-8">
           <div className="h-5 w-28 animate-pulse rounded bg-[var(--surface-strong)]" />
           <div className="h-12 animate-pulse rounded bg-[var(--surface-soft)]" />
+        </div>
+      ) : error ? (
+        <div className="py-10 text-sm text-[var(--muted)]">
+          Public snapshot status is temporarily unavailable.
         </div>
       ) : snapshot ? (
         <div className="pt-6">

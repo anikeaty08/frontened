@@ -14,8 +14,8 @@ The Compact circuits govern lifecycle authority and state transitions. The backe
 
 ## Required pre-deployment verification
 
-1. Install the **official pinned** Midnight Compact toolchain for the chosen network. The Phase 1 source declares Compact language `0.22` and was verified with compiler `0.30.0` in Ubuntu WSL.
-2. Compile with `compact compile +0.30.0 aqua-reserve-snapshot.compact <output-directory>` and commit neither proving keys nor wallet secrets.
+1. Install the **official pinned** Midnight Compact toolchain for the chosen network. The Phase 1 source declares Compact language `0.23` and is pinned to compiler `0.31.1`.
+2. Compile with `compact compile +0.31.1 aqua-reserve-snapshot.compact <output-directory>` and commit neither proving keys nor wallet secrets.
 3. Run the generated circuit tests for successful attestation, shortfall, unapproved attestation, expiry, and revocation.
 4. Deploy with a funded testnet wallet and record the contract address plus transaction ID in the deployment manifest.
 5. Set the API's `MIDNIGHT_ANCHOR_MODE=midnight-preprod`; it invokes the direct `midnight/` worker and records the unique deployed address for each snapshot.

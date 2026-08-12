@@ -1,5 +1,5 @@
 import { Icon } from "./Icon";
-import { compactHash, formatDate } from "@/lib/api";
+import { compactHash, formatDate, snapshotFreshness } from "@/lib/api";
 import type { PublicSnapshot } from "@/lib/types";
 import StatusBadge from "./StatusBadge";
 
@@ -25,6 +25,13 @@ export default function SnapshotDetail({
 }: {
   snapshot: PublicSnapshot;
 }) {
+  const freshness = snapshotFreshness(snapshot.status, snapshot.expiresAt);
+  const freshnessTone = {
+    current: "text-[var(--success)]",
+    warning: "text-[var(--warning)]",
+    unavailable: "text-[var(--muted)]",
+  }[freshness.tone];
+
   return (
     <div className="grid gap-8 lg:grid-cols-12">
       <div className="space-y-8 lg:col-span-7">
@@ -44,8 +51,10 @@ export default function SnapshotDetail({
               <p className="mt-2 text-sm">{formatDate(snapshot.cutoffAt)}</p>
             </div>
             <div>
-              <p className="text-xs text-[var(--faint)]">Expires</p>
-              <p className="mt-2 text-sm">{formatDate(snapshot.expiresAt)}</p>
+              <p className="text-xs text-[var(--faint)]">Freshness</p>
+              <p className={`mt-2 text-sm font-semibold ${freshnessTone}`}>
+                {freshness.label}
+              </p>
             </div>
             <div>
               <p className="text-xs text-[var(--faint)]">Attested</p>
@@ -104,6 +113,32 @@ export default function SnapshotDetail({
         </section>
       </div>
       <aside className="space-y-8 lg:col-span-5">
+        <section className="rounded-xl border aqua-divider bg-[var(--surface)] p-6">
+          <p className="aqua-kicker">Evidence parties</p>
+          <dl className="mt-4">
+            <Field label="Issuer" value={snapshot.issuerId} />
+            <Field label="Attester" value={snapshot.attesterId} />
+            <Field label="Schema version" value={snapshot.schemaVersion} mono />
+            <Field label="Proof system version" value={snapshot.proofSystemVersion} mono />
+            <Field
+              label="Issuer signature"
+              value={`Published · ${compactHash(snapshot.issuerSignature, 12)}`}
+              mono
+            />
+            <Field
+              label="Attester signature"
+              value={
+                snapshot.attesterSignature
+                  ? `Published · ${compactHash(snapshot.attesterSignature, 12)}`
+                  : null
+              }
+              mono
+            />
+          </dl>
+          <p className="mt-5 text-xs leading-5 text-[var(--faint)]">
+            “Published” reports signature presence in the public record; it does not claim browser-side signature verification.
+          </p>
+        </section>
         <section className="rounded-xl border aqua-divider bg-[var(--surface)] p-6">
           <p className="aqua-kicker">Midnight evidence</p>
           <dl className="mt-4">

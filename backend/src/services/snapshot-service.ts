@@ -199,7 +199,11 @@ export class SnapshotService {
 
   public async listPublic(limit: number, cursor: string | null): Promise<{ snapshots: PublicSnapshot[]; nextCursor: string | null }> {
     const page = await this.repository.listSnapshots({ limit, cursor, publicOnly: true });
-    return { snapshots: page.snapshots.map((snapshot) => this.toPublic(snapshot)), nextCursor: page.nextCursor };
+    const snapshots: PublicSnapshot[] = [];
+    for (const snapshot of page.snapshots) {
+      snapshots.push(await this.authoritativePublicSnapshot(snapshot));
+    }
+    return { snapshots, nextCursor: page.nextCursor };
   }
 
   public async listForIssuer(principal: Principal, limit: number, cursor: string | null): Promise<{ snapshots: PublicSnapshot[]; nextCursor: string | null }> {
@@ -332,6 +336,10 @@ export class SnapshotService {
 
   public async publicSnapshot(snapshotId: string): Promise<PublicSnapshot> {
     const snapshot = await this.requireSnapshot(snapshotId);
+    return this.authoritativePublicSnapshot(snapshot);
+  }
+
+  private async authoritativePublicSnapshot(snapshot: ReserveSnapshot): Promise<PublicSnapshot> {
     if (snapshot.anchored.mode === "DEVELOPMENT") return this.toPublic(snapshot);
     if (!snapshot.anchored.contractAddress || snapshot.anchored.status !== "CONFIRMED") return this.toPublic(snapshot, "UNAVAILABLE");
     try {
@@ -347,15 +355,16 @@ export class SnapshotService {
   public async verifyCustomer(principal: Principal, snapshotId: string): Promise<CustomerVerification> {
     roleRequired(principal, "CUSTOMER");
     const snapshot = await this.requireSnapshot(snapshotId);
+    const currentStatus = (await this.authoritativePublicSnapshot(snapshot)).status;
     const encryptedReceipt = await this.repository.getReceipt(snapshotId, this.customerReference(principal.id));
     if (!encryptedReceipt) {
-      return { included: false, cryptographicallyValid: false, currentStatus: this.currentStatus(snapshot), receipt: null };
+      return { included: false, cryptographicallyValid: false, currentStatus, receipt: null };
     }
     let receipt: PrivateReceipt;
     try {
       receipt = open<PrivateReceipt>(encryptedReceipt, this.config.masterKey);
     } catch {
-      return { included: false, cryptographicallyValid: false, currentStatus: this.currentStatus(snapshot), receipt: null };
+      return { included: false, cryptographicallyValid: false, currentStatus, receipt: null };
     }
     const cryptographicallyValid = verifyReceipt({
       customerReference: receipt.customerReference,
@@ -364,7 +373,7 @@ export class SnapshotService {
       membershipRoot: receipt.membershipRoot,
       proof: receipt.proof,
     });
-    return { included: cryptographicallyValid, cryptographicallyValid, currentStatus: this.currentStatus(snapshot), receipt };
+    return { included: cryptographicallyValid, cryptographicallyValid, currentStatus, receipt };
   }
 
   private validateCreateCommand(command: CreateSnapshotCommand): void {

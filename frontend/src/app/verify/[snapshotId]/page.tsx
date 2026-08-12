@@ -1,11 +1,18 @@
 "use client";
 
-import { FormEvent, use, useState } from "react";
+import { FormEvent, use, useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import AppShell from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
-import { ApiError, apiRequest, compactHash, createSession } from "@/lib/api";
+import {
+  ApiError,
+  apiRequest,
+  compactHash,
+  createDemoSession,
+  createSession,
+  demoSessionAvailable,
+} from "@/lib/api";
 import type { CustomerVerification } from "@/lib/types";
 
 export default function CustomerVerificationPage({
@@ -18,16 +25,26 @@ export default function CustomerVerificationPage({
   const [result, setResult] = useState<CustomerVerification | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [demoAvailable, setDemoAvailable] = useState(false);
+
+  useEffect(() => {
+    void demoSessionAvailable().then(setDemoAvailable);
+  }, []);
+
+  const readVerification = async () => {
+    const response = await apiRequest<{ verification: CustomerVerification }>(
+      `/v1/customer/snapshots/${snapshotId}/verification`,
+    );
+    setResult(response.verification);
+  };
+
   const verify = async (event: FormEvent) => {
     event.preventDefault();
     setLoading(true);
     setError(null);
     try {
       await createSession(token, "CUSTOMER");
-      const response = await apiRequest<{ verification: CustomerVerification }>(
-        `/v1/customer/snapshots/${snapshotId}/verification`,
-      );
-      setResult(response.verification);
+      await readVerification();
       setToken("");
     } catch (cause) {
       setError(
@@ -36,6 +53,25 @@ export default function CustomerVerificationPage({
           : cause instanceof Error
             ? cause.message
             : "Verification failed.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyDemoCustomer = async (customerNumber: 1 | 50) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await createDemoSession("CUSTOMER", customerNumber);
+      await readVerification();
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : cause instanceof Error
+            ? cause.message
+            : "Demo verification failed.",
       );
     } finally {
       setLoading(false);
@@ -89,6 +125,31 @@ export default function CustomerVerificationPage({
             >
               {loading ? "Verifying…" : "Verify inclusion"}
             </button>
+            {demoAvailable && (
+              <div className="mt-7 border-t aqua-divider pt-6">
+                <p className="text-xs leading-5 text-[var(--faint)]">
+                  Local acceptance demo. Customer 001 proves inclusion; customer 050 demonstrates omission without revealing another customer’s receipt.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void verifyDemoCustomer(1)}
+                    className="aqua-button aqua-button-secondary"
+                  >
+                    Demo included customer
+                  </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => void verifyDemoCustomer(50)}
+                    className="aqua-button aqua-button-secondary"
+                  >
+                    Demo omitted customer
+                  </button>
+                </div>
+              </div>
+            )}
           </form>
         )}
         {error && (
