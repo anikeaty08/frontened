@@ -24,42 +24,42 @@ export default function Architecture() {
 
         <div className="flex flex-col items-start">
           <div className="text-[0.65rem] font-mono text-[#0052FF] uppercase tracking-widest mb-4 bg-[rgba(0,82,255,0.1)] px-3 py-1 border border-[rgba(0,82,255,0.3)]">
-            Multi-Agent Intelligence System
+            Scoped Reserve Assurance
           </div>
           <h2 className="text-3xl md:text-5xl font-bold tracking-tighter text-white uppercase mb-8">
-            Three Intelligent
+            Three Separate
             <br />
-            Specialized Agents.
+            Evidence Boundaries.
           </h2>
           <p className="text-sm md:text-base text-[#777] font-light leading-relaxed mb-8">
-            Our platform uses three specialized analysis agents to investigate APK files from multiple perspectives, combining static, dynamic, and network analysis for comprehensive threat detection.
+            AquaReserve separates private source data, public snapshot status, and authorised evidence so every participant receives only the information their role permits.
           </p>
           <div className="space-y-6 font-mono text-xs text-[#888]">
             <div className="border-l border-[#222] pl-4">
-              <span className="text-white block mb-1 uppercase tracking-widest">1. Static Analysis Agent</span>
-              <span className="text-[#555] block mb-2">Analyzes the APK without executing it, identifying suspicious patterns and permissions.</span>
+              <span className="text-white block mb-1 uppercase tracking-widest">1. Issuer publishes a snapshot</span>
+              <span className="text-[#555] block mb-2">Private liabilities and reserve evidence become commitments, signatures, and a time-bound coverage result.</span>
               <span className="text-xs text-[#777] flex flex-wrap gap-x-3 gap-y-1">
-                <span>// Decompiles Structure</span>
-                <span>// Detects Permissions</span>
-                <span>// Extracts URLs</span>
+                <span>// Fixed cutoff</span>
+                <span>// Declared scope</span>
+                <span>// Integer base units</span>
               </span>
             </div>
             <div className="border-l border-[#222] pl-4">
-              <span className="text-white block mb-1 uppercase tracking-widest">2. Dynamic Analysis Agent</span>
-              <span className="text-[#555] block mb-2">Executes the APK in a controlled environment to observe runtime behavior and API calls.</span>
+              <span className="text-white block mb-1 uppercase tracking-widest">2. Customers verify privately</span>
+              <span className="text-[#555] block mb-2">A customer receipt proves one covered record was included without disclosing another customer or any public balance.</span>
               <span className="text-xs text-[#777] flex flex-wrap gap-x-3 gap-y-1">
-                <span>// Tracks API Calls</span>
-                <span>// Monitors Runtime Activity</span>
-                <span>// Detects Payloads</span>
+                <span>// Encrypted receipt</span>
+                <span>// Merkle membership</span>
+                <span>// No public identity</span>
               </span>
             </div>
             <div className="border-l border-[#222] pl-4">
-              <span className="text-white block mb-1 uppercase tracking-widest">3. Sandbox Monitoring Agent</span>
-              <span className="text-[#555] block mb-2">Runs the application in an isolated Android environment for network and system monitoring.</span>
+              <span className="text-white block mb-1 uppercase tracking-widest">3. Auditors inspect approved evidence</span>
+              <span className="text-[#555] block mb-2">An authorised auditor can inspect scoped reconciliation and reserve-control evidence without widening the public disclosure.</span>
               <span className="text-xs text-[#777] flex flex-wrap gap-x-3 gap-y-1">
-                <span>// C2 Detection</span>
-                <span>// Domain Identification</span>
-                <span>// Traffic Analysis</span>
+                <span>// Permissioned package</span>
+                <span>// Attester signature</span>
+                <span>// Revocation aware</span>
               </span>
             </div>
           </div>

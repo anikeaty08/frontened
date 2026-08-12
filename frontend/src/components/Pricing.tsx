@@ -7,9 +7,9 @@ export default function Pricing() {
         <div className="mb-20 flex flex-col md:flex-row justify-between items-end gap-8 border-b border-[#151515] pb-8">
           <div>
             <h2 className="text-3xl md:text-5xl font-bold tracking-tighter text-white uppercase mb-4">
-              Deployment Protocols
+              Delivery Roadmap
             </h2>
-            <p className="text-sm text-[#777] font-mono tracking-widest uppercase">Select your tier of supremacy.</p>
+            <p className="text-sm text-[#777] font-mono tracking-widest uppercase">Each phase extends assurance without widening the public claim.</p>
           </div>
         </div>
 
@@ -17,25 +17,25 @@ export default function Pricing() {
           {/* Tier 1 */}
           <div className="glass-panel corner-brackets p-8 flex flex-col hover:border-[#333] transition-colors duration-500">
             <div className="mb-6">
-              <div className="text-[0.65rem] font-mono text-[#777] uppercase tracking-widest mb-2">Protocol_Alpha</div>
-              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Vanguard</h3>
+              <div className="text-[0.65rem] font-mono text-[#777] uppercase tracking-widest mb-2">Phase_01</div>
+              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Snapshot</h3>
             </div>
             <div className="text-4xl font-mono text-white mb-8 border-b border-[#1A1A1A] pb-8">
-              10<span className="text-lg text-[#555] ml-1 uppercase">APKs</span>
+              1<span className="text-lg text-[#555] ml-1 uppercase">Asset</span>
             </div>
             <ul className="text-xs font-mono text-[#777] space-y-4 mb-12 flex-1">
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Static Analysis Scan
+                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Scoped, immutable reserve snapshot
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Manifest Permission Analysis
+                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Private customer inclusion receipts
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Email Support
+                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Expiry, revocation, and shortfall states
               </li>
             </ul>
             <a href="#deployment" className="btn-hex w-full py-4 text-xs text-center">
-              <span className="relative z-10 w-full">Initialize</span>
+              <span className="relative z-10 w-full">View Snapshot</span>
             </a>
           </div>
 
@@ -44,55 +44,55 @@ export default function Pricing() {
             <div className="absolute top-0 left-0 w-full h-1 bg-[#0052FF]"></div>
             <div className="mb-6">
               <div className="flex justify-between items-center mb-2">
-                <div className="text-[0.65rem] font-mono text-[#0052FF] uppercase tracking-widest">Protocol_Sigma</div>
+                <div className="text-[0.65rem] font-mono text-[#0052FF] uppercase tracking-widest">Phase_02</div>
                 <span className="text-[0.6rem] font-mono bg-[rgba(0,82,255,0.1)] text-[#0052FF] px-2 py-1">
-                  RECOMMENDED
+                  NEXT
                 </span>
               </div>
-              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Enterprise</h3>
+              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Assurance</h3>
             </div>
             <div className="text-4xl font-mono text-white mb-8 border-b border-[#1A1A1A] pb-8">
-              100<span className="text-lg text-[#555] ml-1 uppercase">APKs+</span>
+              Multi<span className="text-lg text-[#555] ml-1 uppercase">Asset</span>
             </div>
             <ul className="text-xs font-mono text-[#DDD] space-y-4 mb-12 flex-1">
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Dynamic Sandbox Analysis
+                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Asset-by-asset snapshot history
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Automated C2 Detection
+                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Issuer and attester registry
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Real-time API Trace Logs
+                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Reconciliation and reserve-control evidence
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Dedicated Support Channel
+                <Icon icon="solar:check-circle-bold" className="text-[#0052FF] text-base" /> Auditor-only evidence packages
               </li>
             </ul>
             <a href="#deployment" className="btn-hex btn-hex-primary w-full py-4 text-xs text-center">
-              <span className="relative z-10 w-full">Deploy Sandbox</span>
+              <span className="relative z-10 w-full">Explore Assurance</span>
             </a>
           </div>
 
           {/* Tier 3 */}
           <div className="glass-panel corner-brackets p-8 flex flex-col hover:border-[#333] transition-colors duration-500">
             <div className="mb-6">
-              <div className="text-[0.65rem] font-mono text-[#777] uppercase tracking-widest mb-2">Protocol_Omega</div>
-              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Sovereign</h3>
+              <div className="text-[0.65rem] font-mono text-[#777] uppercase tracking-widest mb-2">Phase_03</div>
+              <h3 className="text-2xl font-bold text-white uppercase tracking-tight">Platform</h3>
             </div>
-            <div className="text-4xl font-mono text-white mb-8 border-b border-[#1A1A1A] pb-8">UNLTD</div>
+            <div className="text-4xl font-mono text-white mb-8 border-b border-[#1A1A1A] pb-8">API</div>
             <ul className="text-xs font-mono text-[#777] space-y-4 mb-12 flex-1">
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Private Cloud Sandboxing
+                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Scheduled issuer publishing
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Forensic Evidence Export
+                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Partner API and verification widget
               </li>
               <li className="flex items-center gap-3">
-                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Custom Alert Integrations
+                <Icon icon="solar:check-circle-linear" className="text-white text-base" /> Monitoring and incident notifications
               </li>
             </ul>
             <a href="#deployment" className="btn-hex w-full py-4 text-xs text-center">
-              <span className="relative z-10 w-full">Contact Board</span>
+              <span className="relative z-10 w-full">Plan Integration</span>
             </a>
           </div>
         </div>

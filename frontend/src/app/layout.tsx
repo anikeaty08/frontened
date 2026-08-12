@@ -13,8 +13,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cliste — Advanced Android Threat Detection",
-  description: "Our multi-agent security system performs static analysis, dynamic execution, and sandbox monitoring to uncover malicious behavior, detect C2 communication, and extract forensic evidence automatically.",
+  title: "AquaReserve — Privacy-Preserving Reserve Assurance",
+  description: "Time-bound, scoped reserve snapshots with private customer inclusion verification.",
+  icons: {
+    icon: "/aquareserve-icon.png",
+  },
 };
 
 export default function RootLayout({

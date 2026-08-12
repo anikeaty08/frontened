@@ -12,27 +12,27 @@ interface LogEntry {
 }
 
 const INITIAL_LOGS: LogEntry[] = [
-  { time: "14:21:05", type: "APK_UPLOAD", status: "OK", statusColor: "text-white" },
-  { time: "14:21:12", type: "DECOMPILE", status: "MANIFEST_OK", statusColor: "text-white" },
+  { time: "05:00:01", type: "SNAPSHOT_CREATE", status: "SCOPED", statusColor: "text-white" },
+  { time: "05:00:09", type: "LIABILITY_ROOT", status: "COMMITTED", statusColor: "text-white" },
   {
     time: "14:21:18",
-    type: "THREAT_LVL",
-    status: "HIGH",
+    type: "COVERAGE_PROOF",
+    status: "VERIFIED",
     statusColor: "text-red-500",
     isSpecial: true,
   },
-  { time: "14:21:33", type: "API_TRACE", status: "PASS", statusColor: "text-white" },
-  { time: "14:21:45", type: "SANDBOX", status: "EXECUTING", statusColor: "text-white" },
-  { time: "14:22:01", type: "C2_DETECT", status: "SCANNING", statusColor: "text-white" },
+  { time: "05:00:17", type: "MIDNIGHT_ANCHOR", status: "CONFIRMED", statusColor: "text-white" },
+  { time: "05:00:21", type: "ATTESTATION", status: "SIGNED", statusColor: "text-white" },
+  { time: "05:00:25", type: "CUSTOMER_RECEIPT", status: "ENCRYPTED", statusColor: "text-white" },
 ];
 
-const LOG_TYPES = ["APK_UPLOAD", "DECOMPILE", "MANIFEST_SCAN", "API_MONITOR", "C2_DETECT", "MEM_DUMP", "TRAFFIC_CAP"];
+const LOG_TYPES = ["SCOPE_MANIFEST", "LIABILITY_ROOT", "RESERVE_COMMITMENT", "MIDNIGHT_ANCHOR", "ATTESTATION", "RECEIPT_ISSUE", "PUBLIC_STATUS"];
 const LOG_STATUSES = [
   { status: "OK", color: "text-white" },
   { status: "PASS", color: "text-white" },
-  { status: "SUSPICIOUS", color: "text-orange-500" },
-  { status: "ALERT", color: "text-red-500" },
-  { status: "ACTIVE", color: "text-[#0052FF]" },
+  { status: "SCOPED", color: "text-orange-500" },
+  { status: "VERIFIED", color: "text-[#0052FF]" },
+  { status: "CONFIRMED", color: "text-[#0052FF]" },
 ];
 
 export default function CommandTerminal() {
@@ -46,13 +46,13 @@ export default function CommandTerminal() {
       const randomType = LOG_TYPES[Math.floor(Math.random() * LOG_TYPES.length)];
       const randomStatus = LOG_STATUSES[Math.floor(Math.random() * LOG_STATUSES.length)];
 
-      const isThreat = Math.random() > 0.85;
+      const isCoverageProof = Math.random() > 0.85;
 
-      const newLog: LogEntry = isThreat
+      const newLog: LogEntry = isCoverageProof
         ? {
             time: timeString,
-            type: "THREAT_LVL",
-            status: "HIGH",
+            type: "COVERAGE_PROOF",
+            status: "VERIFIED",
             statusColor: "text-red-500",
             isSpecial: true,
           }
@@ -81,13 +81,13 @@ export default function CommandTerminal() {
         <div className="mb-16 flex flex-col md:flex-row justify-between items-end gap-8 border-b border-[#151515] pb-8">
           <div>
             <h2 className="text-3xl md:text-5xl font-bold tracking-tighter text-white uppercase mb-4">
-              Command Terminal
+              Snapshot Console
             </h2>
-            <p className="text-sm text-[#777] font-mono tracking-widest uppercase">Absolute transparency. Total control.</p>
+            <p className="text-sm text-[#777] font-mono tracking-widest uppercase">Public status. Private source data.</p>
           </div>
           <div className="text-right text-xs font-mono text-[#555]">
-            [ LIVE DEMONSTRATION ]<br />
-            VERSION 4.2.0
+            [ PHASE 1 DEMONSTRATION ]<br />
+            SCHEMA 1.0
           </div>
         </div>
 
@@ -102,11 +102,11 @@ export default function CommandTerminal() {
                 <div className="w-3 h-3 rounded-full bg-[#333]"></div>
               </div>
               <div className="h-4 w-px bg-[#222]"></div>
-              <span className="text-xs font-mono text-white">CLISTE_OS // ROOT</span>
+              <span className="text-xs font-mono text-white">AQUA_RESERVE // PUBLIC</span>
             </div>
             <div className="flex gap-4 text-xs font-mono">
-              <span className="text-[#0052FF]">CONNECTED</span>
-              <span className="text-[#777]">LIVE FEED</span>
+              <span className="text-[#0052FF]">ANCHORED</span>
+              <span className="text-[#777]">STATUS FEED</span>
             </div>
           </div>
 
@@ -119,25 +119,25 @@ export default function CommandTerminal() {
                 <ul className="space-y-3 text-xs font-mono">
                   <li className="text-white flex justify-between items-center">
                     <span className="flex items-center gap-2">
-                      <Icon icon="solar:widget-5-linear" /> APK Overview
+                      <Icon icon="solar:widget-5-linear" /> Snapshot Overview
                     </span>{" "}
                     <span className="w-1 h-1 bg-white rounded-full"></span>
                   </li>
                   <li className="text-[#777] hover:text-white transition-colors cursor-pointer flex items-center gap-2">
-                    <Icon icon="solar:shield-keyhole-linear" /> Malware Logs
+                    <Icon icon="solar:shield-keyhole-linear" /> Proof Events
                   </li>
                   <li className="text-[#777] hover:text-white transition-colors cursor-pointer flex items-center gap-2">
-                    <Icon icon="solar:database-linear" /> Sandbox Status
+                    <Icon icon="solar:database-linear" /> Private Receipts
                   </li>
                   <li className="text-[#777] hover:text-white transition-colors cursor-pointer flex items-center gap-2">
-                    <Icon icon="solar:routing-2-linear" /> C2 Infrastructure
+                    <Icon icon="solar:routing-2-linear" /> Scope Manifest
                   </li>
                 </ul>
               </div>
               <div>
-                <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-4">System Alerts</div>
+                <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-4">Snapshot Limits</div>
                 <div className="bg-[#111] border border-[#222] p-3 text-[0.65rem] font-mono text-[#777]">
-                  <span className="text-[#0052FF]">INFO:</span> Automated multi-agent report generated.
+                  <span className="text-[#0052FF]">INFO:</span> Same-asset coverage only. Not an audit or safety guarantee.
                 </div>
               </div>
             </div>
@@ -149,23 +149,23 @@ export default function CommandTerminal() {
               {/* Top Stats */}
               <div className="grid grid-cols-3 gap-6 relative z-10">
                 <div className="bg-[#050505] border border-[#1A1A1A] p-4 corner-brackets group">
-                  <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-2">Analyzed APKs</div>
-                  <div className="text-xl lg:text-3xl font-mono text-white tracking-tight">84.2K</div>
+                  <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-2">Covered Asset</div>
+                  <div className="text-xl lg:text-3xl font-mono text-white tracking-tight">DUSD</div>
                 </div>
                 <div className="bg-[#050505] border border-[#1A1A1A] p-4 corner-brackets group">
-                  <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-2">Detected Threats</div>
-                  <div className="text-xl lg:text-3xl font-mono text-[#0052FF] tracking-tight">1,420</div>
+                  <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-2">Proof Status</div>
+                  <div className="text-xl lg:text-3xl font-mono text-[#0052FF] tracking-tight">VALID</div>
                 </div>
                 <div className="bg-[#050505] border border-[#1A1A1A] p-4 corner-brackets group">
-                  <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-2">Sandbox Load</div>
-                  <div className="text-xl lg:text-3xl font-mono text-white tracking-tight">14%</div>
+                  <div className="text-[0.6rem] font-mono text-[#555] uppercase tracking-widest mb-2">Customer Set</div>
+                  <div className="text-xl lg:text-3xl font-mono text-white tracking-tight">25</div>
                 </div>
               </div>
 
               {/* Complex Chart Mockup */}
               <div className="bg-[#050505] border border-[#1A1A1A] flex-1 p-6 relative z-10 flex flex-col">
                 <div className="flex justify-between items-center mb-6">
-                  <div className="text-xs font-mono text-white uppercase tracking-widest">Scan Ingress / Queue</div>
+                  <div className="text-xs font-mono text-white uppercase tracking-widest">Snapshot Commitments / Timeline</div>
                   <div className="flex gap-2">
                     <span className="text-[0.6rem] font-mono px-2 py-1 bg-[#111] text-white">1H</span>
                     <span className="text-[0.6rem] font-mono px-2 py-1 text-[#555]">24H</span>
@@ -182,7 +182,7 @@ export default function CommandTerminal() {
                   <div className="w-full bg-[#111] h-[60%] hover:bg-[#222] transition-all duration-300"></div>
                   <div className="w-full bg-[#0052FF] h-[85%] relative group">
                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white text-black font-mono text-[0.6rem] px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                      PEAK
+                      ANCHORED
                     </div>
                   </div>
                   <div className="w-full bg-[#111] h-[50%] hover:bg-[#222] transition-all duration-300"></div>
@@ -199,7 +199,7 @@ export default function CommandTerminal() {
             <div className="col-span-1 lg:col-span-3 p-0 bg-[#050505] flex flex-col h-[30rem] lg:h-auto border-t lg:border-t-0 border-[#1A1A1A]">
               <div className="p-4 border-b border-[#1A1A1A]">
                 <div className="text-xs font-mono text-white uppercase tracking-widest flex items-center gap-2">
-                  <span className="w-2 h-2 bg-[#0052FF] rounded-full animate-ping"></span> Live Feed
+                  <span className="w-2 h-2 bg-[#0052FF] rounded-full animate-ping"></span> Proof Feed
                 </div>
               </div>
               <div

@@ -6,43 +6,43 @@ export default function Metrics() {
       <div className="max-w-[100rem] mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-12 text-center reveal stagger-group relative z-10">
         <div className="stagger-item flex flex-col items-center">
           <div className="text-[0.65rem] font-mono text-[#555] uppercase tracking-widest mb-4 border border-[#222] px-3 py-1 bg-[#050505]">
-            Obfuscation Rate
+            Snapshot Scope
           </div>
           <div className="text-6xl font-bold tracking-tighter text-white mb-2">
-            95<span className="text-2xl text-[#0052FF] ml-1">%</span>
+            1<span className="text-2xl text-[#0052FF] ml-1">ASSET</span>
           </div>
-          <p className="text-xs text-[#777] font-mono uppercase mt-2">Use obfuscation techniques</p>
+          <p className="text-xs text-[#777] font-mono uppercase mt-2">DUSD in native units only</p>
         </div>
 
         <div className="stagger-item flex flex-col items-center">
           <div className="text-[0.65rem] font-mono text-[#555] uppercase tracking-widest mb-4 border border-[#222] px-3 py-1 bg-[#050505]">
-            C2 Callbacks
+            Customer Receipts
           </div>
           <div className="text-6xl font-bold tracking-tighter text-white mb-2">
-            70<span className="text-2xl text-[#0052FF] ml-1">%</span>
+            25<span className="text-2xl text-[#0052FF] ml-1">X</span>
           </div>
-          <p className="text-xs text-[#777] font-mono uppercase mt-2">Communicate with C2 servers</p>
+          <p className="text-xs text-[#777] font-mono uppercase mt-2">Encrypted private inclusion checks</p>
         </div>
 
         <div className="stagger-item flex flex-col items-center">
           <div className="text-[0.65rem] font-mono text-[#555] uppercase tracking-widest mb-4 border border-[#222] px-3 py-1 bg-[#050505]">
-            Analysis Speed
+            Public Result
           </div>
           <div className="text-6xl font-bold tracking-tighter text-white mb-2">
-            3x
-            <span className="text-2xl text-[#0052FF] ml-1">Faster</span>
+            ZK
+            <span className="text-2xl text-[#0052FF] ml-1">PROOF</span>
           </div>
-          <p className="text-xs text-[#777] font-mono uppercase mt-2">Than manual analysis</p>
+          <p className="text-xs text-[#777] font-mono uppercase mt-2">Coverage status without source data</p>
         </div>
 
         <div className="stagger-item flex flex-col items-center">
           <div className="text-[0.65rem] font-mono text-[#555] uppercase tracking-widest mb-4 border border-[#222] px-3 py-1 bg-[#050505]">
-            Automation Level
+            Snapshot States
           </div>
           <div className="text-6xl font-bold tracking-tighter text-white mb-2">
-            100<span className="text-2xl text-[#0052FF] ml-1">%</span>
+            6<span className="text-2xl text-[#0052FF] ml-1">X</span>
           </div>
-          <p className="text-xs text-[#777] font-mono uppercase mt-2">Automated Investigation</p>
+          <p className="text-xs text-[#777] font-mono uppercase mt-2">Verified, shortfall, expired, revoked, invalid, unavailable</p>
         </div>
       </div>
     </section>

@@ -5,9 +5,9 @@ export default function ArsenalGrid() {
     <section className="py-32 px-6 lg:px-12 w-full relative z-10 bg-[#030303] border-t border-[#151515]">
       <div className="max-w-[100rem] mx-auto">
         <div className="mb-20 reveal max-w-2xl">
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tighter text-white uppercase mb-6">The Arsenal.</h2>
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tighter text-white uppercase mb-6">The proof boundary.</h2>
           <p className="text-sm md:text-base text-[#777] font-light leading-relaxed">
-            Everything you need to detect, analyze, and respond to advanced Android malware threats with forensic-grade precision.
+            AquaReserve makes each public claim specific, cryptographically supported, and safe to inspect without exposing private reserve or customer data.
           </p>
         </div>
 
@@ -18,12 +18,12 @@ export default function ArsenalGrid() {
               icon="solar:shield-warning-linear"
               className="text-3xl text-white mb-8 group-hover:text-[#0052FF] transition-colors"
             />
-            <h3 className="text-lg font-bold text-white uppercase tracking-tight mb-3 font-mono">C2 Infrastructure</h3>
+            <h3 className="text-lg font-bold text-white uppercase tracking-tight mb-3 font-mono">Coverage Evidence</h3>
             <p className="text-sm text-[#777] font-light leading-relaxed flex-1">
-              Identify hidden command-and-control servers used by malicious apps. Detect remote domains, monitor callback patterns, and track attacker command channels.
+              A private liability commitment and reserve-evidence commitment bind the same-asset coverage result to a defined snapshot.
             </p>
             <div className="mt-8 pt-4 border-t border-[#1A1A1A] text-[0.65rem] font-mono text-[#555] uppercase">
-              Spec: DNS & Callback Tracer
+              Spec: Merkle-sum commitment
             </div>
           </div>
 
@@ -33,12 +33,12 @@ export default function ArsenalGrid() {
               icon="solar:routing-3-linear"
               className="text-3xl text-white mb-8 group-hover:text-[#0052FF] transition-colors"
             />
-            <h3 className="text-lg font-bold text-white uppercase tracking-tight mb-3 font-mono">Behavioral Detection</h3>
+            <h3 className="text-lg font-bold text-white uppercase tracking-tight mb-3 font-mono">Private Inclusion</h3>
             <p className="text-sm text-[#777] font-light leading-relaxed flex-1">
-              Observe malicious runtime activities such as credential harvesting, spyware actions, system call escalations, and silent background data exfiltration.
+              Every covered customer receives an encrypted receipt to verify only their own inclusion without exposing a balance or identity.
             </p>
             <div className="mt-8 pt-4 border-t border-[#1A1A1A] text-[0.65rem] font-mono text-[#555] uppercase">
-              Spec: Real-time API Monitor
+              Spec: Encrypted customer receipt
             </div>
           </div>
 
@@ -48,12 +48,12 @@ export default function ArsenalGrid() {
               icon="solar:server-square-update-linear"
               className="text-3xl text-white mb-8 group-hover:text-[#0052FF] transition-colors"
             />
-            <h3 className="text-lg font-bold text-white uppercase tracking-tight mb-3 font-mono">Forensic Extraction</h3>
+            <h3 className="text-lg font-bold text-white uppercase tracking-tight mb-3 font-mono">Scoped Transparency</h3>
             <p className="text-sm text-[#777] font-light leading-relaxed flex-1">
-              Extract critical artifacts automatically including hardcoded URLs, obfuscated IP endpoints, domain addresses, file system modifications, and system configurations.
+              The public record carries issuer, attester, timestamp, expiry, limitations, scope hash, and proof status—never raw evidence.
             </p>
             <div className="mt-8 pt-4 border-t border-[#1A1A1A] text-[0.65rem] font-mono text-[#555] uppercase">
-              Spec: Automated Artifact Extractor
+              Spec: Midnight snapshot record
             </div>
           </div>
         </div>

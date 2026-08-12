@@ -8,41 +8,41 @@ export default function TrustMarquee() {
 
       <div className="flex whitespace-nowrap overflow-hidden">
         <div className="animate-[marquee_30s_linear_infinite] flex items-center gap-12 text-xs uppercase font-mono tracking-widest text-[#555555]">
-          <span className="text-white">Trusted by</span>
+          <span className="text-white">Built for</span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:buildings-2-linear" className="text-lg" /> Security Researchers
+            <Icon icon="solar:buildings-2-linear" className="text-lg" /> Custodial Platforms
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:shield-network-linear" className="text-lg" /> SOC Teams
+            <Icon icon="solar:shield-network-linear" className="text-lg" /> Customer Verification
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:graph-up-linear" className="text-lg" /> Forensics Teams
+            <Icon icon="solar:graph-up-linear" className="text-lg" /> Independent Attesters
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:database-linear" className="text-lg" /> App Store Security
+            <Icon icon="solar:database-linear" className="text-lg" /> Authorised Auditors
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           {/* Loop */}
-          <span className="text-white">Trusted by</span>
+          <span className="text-white">Built for</span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:buildings-2-linear" className="text-lg" /> Security Researchers
+            <Icon icon="solar:buildings-2-linear" className="text-lg" /> Custodial Platforms
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:shield-network-linear" className="text-lg" /> SOC Teams
+            <Icon icon="solar:shield-network-linear" className="text-lg" /> Customer Verification
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:graph-up-linear" className="text-lg" /> Forensics Teams
+            <Icon icon="solar:graph-up-linear" className="text-lg" /> Independent Attesters
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
           <span className="flex items-center gap-2">
-            <Icon icon="solar:database-linear" className="text-lg" /> App Store Security
+            <Icon icon="solar:database-linear" className="text-lg" /> Authorised Auditors
           </span>
           <span className="w-1 h-1 bg-[#222]"></span>
         </div>
