@@ -14,11 +14,7 @@ const GRID_SPACING = 42;
 const CURSOR_RADIUS = 170;
 const MAX_TWINKLES = 24;
 
-export default function HeroTwinkle({
-  variant = "field",
-}: {
-  variant?: "field" | "trail";
-}) {
+export default function HeroTwinkle() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -40,8 +36,8 @@ export default function HeroTwinkle({
     const themeColors = () => {
       const dark = document.documentElement.dataset.theme !== "light";
       return {
-        dot: dark ? "126, 168, 211" : "38, 99, 158",
-        accent: dark ? "45, 156, 255" : "0, 82, 255",
+        dot: dark ? "135, 145, 158" : "38, 99, 158",
+        accent: dark ? "232, 237, 243" : "0, 82, 255",
       };
     };
 
@@ -119,33 +115,28 @@ export default function HeroTwinkle({
       const colors = themeColors();
       context.clearRect(0, 0, width, height);
 
-      if (variant === "field") {
-        const drift = reducedMotion.matches ? 0 : time * 0.00055;
-        for (let y = GRID_SPACING / 2; y < height; y += GRID_SPACING) {
-          for (let x = GRID_SPACING / 2; x < width; x += GRID_SPACING) {
-            const wave = Math.sin(x * 0.018 + y * 0.012 + drift) * 1.4;
-            const dx = x - cursor.x;
-            const dy = y - cursor.y;
-            const distance = Math.hypot(dx, dy) || 1;
-            const influence = cursor.active
-              ? Math.max(0, 1 - distance / CURSOR_RADIUS)
-              : 0;
-            const displacement = influence * influence * 10;
-            const drawX = x + (dx / distance) * displacement;
-            const drawY = y + wave + (dy / distance) * displacement;
+      const drift = reducedMotion.matches ? 0 : time * 0.00055;
+      for (let y = GRID_SPACING / 2; y < height; y += GRID_SPACING) {
+        for (let x = GRID_SPACING / 2; x < width; x += GRID_SPACING) {
+          const wave = Math.sin(x * 0.018 + y * 0.012 + drift) * 1.4;
+          const dx = x - cursor.x;
+          const dy = y - cursor.y;
+          const distance = Math.hypot(dx, dy) || 1;
+          const influence = cursor.active
+            ? Math.max(0, 1 - distance / CURSOR_RADIUS)
+            : 0;
+          const displacement = influence * influence * 10;
+          const drawX = x + (dx / distance) * displacement;
+          const drawY = y + wave + (dy / distance) * displacement;
 
-            context.fillStyle = `rgba(${influence > 0.16 ? colors.accent : colors.dot}, ${0.1 + influence * 0.58})`;
-            context.beginPath();
-            context.arc(drawX, drawY, 0.8 + influence * 1.45, 0, Math.PI * 2);
-            context.fill();
-          }
+          context.fillStyle = `rgba(${influence > 0.16 ? colors.accent : colors.dot}, ${0.1 + influence * 0.58})`;
+          context.beginPath();
+          context.arc(drawX, drawY, 0.8 + influence * 1.45, 0, Math.PI * 2);
+          context.fill();
         }
       }
 
-      if (
-        !reducedMotion.matches &&
-        Math.random() < (variant === "field" ? 0.018 : 0.009)
-      ) {
+      if (!reducedMotion.matches && Math.random() < 0.018) {
         addTwinkle(Math.random() * width, Math.random() * height, 0.75);
       }
 
@@ -177,17 +168,13 @@ export default function HeroTwinkle({
       document.removeEventListener("pointerleave", onPointerLeave);
       window.cancelAnimationFrame(animationFrame);
     };
-  }, [variant]);
+  }, []);
 
   return (
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className={
-        variant === "field"
-          ? "pointer-events-none absolute inset-0 h-full w-full opacity-75 [mask-image:linear-gradient(to_bottom,black,transparent_92%)]"
-          : "pointer-events-none fixed inset-0 z-40 h-full w-full opacity-70"
-      }
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-75 [mask-image:linear-gradient(to_bottom,black,transparent_92%)]"
     />
   );
 }
