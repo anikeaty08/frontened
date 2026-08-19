@@ -1,6 +1,6 @@
 # Aqua Reserve Phase 1 deployment runbook
 
-This product is deployable without Docker. Deployment is a controlled release, not an `npm run` side effect: it requires a Midnight wallet/network configuration and AWS identity that are not present in this workspace.
+Deployment is a controlled release, not an `npm run` side effect: it requires a Midnight wallet/network configuration, a local Docker proof server, and AWS identity that are not present in this workspace.
 
 ## 0. Operator identity in Ubuntu WSL
 
@@ -13,9 +13,11 @@ aws sts get-caller-identity
 
 The identity must be authorised for `rds-db:connect` to the configured database principal. The current AWS CLI installation is independent of Docker.
 
+The API process must use the same AWS credential provider as the CLI. An `export` in one open WSL terminal is not inherited by a Windows Node process. Either run the API under WSL with a Linux Node runtime and its AWS profile, or install/authenticate the AWS CLI/profile used by the Windows service account.
+
 ## 1. Backend release configuration
 
-Set production secrets in the deployment environment only:
+Set persistent release secrets in the deployment environment only. The same requirements apply to a synthetic Midnight Preprod release even when `NODE_ENV=development` is used for the demo roles:
 
 ```powershell
 $env:NODE_ENV='production'
@@ -29,13 +31,12 @@ $env:RDS_CA_CERT_PATH='C:\secure\rds-ca-bundle.pem'
 $env:AQUA_MASTER_KEY_BASE64='<32-byte-base64-key>'
 $env:AQUA_CUSTOMER_REFERENCE_KEY_BASE64='<32-byte-base64-key>'
 $env:AQUA_AUTH_TOKENS_JSON='<role-bound-principals-json>'
-$env:AQUA_ISSUER_ED25519_PRIVATE_KEY_PEM='<issuer-private-key>'
-$env:AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM='<issuer-public-key>'
-$env:AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM='<attester-private-key>'
-$env:AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM='<attester-public-key>'
-$env:MIDNIGHT_ANCHOR_MODE='midnight-testnet'
-$env:MIDNIGHT_CONTRACT_ADDRESS='<deployed-aqua-reserve-contract-address>'
-$env:MIDNIGHT_ANCHOR_SUBMIT_URL='https://your-private-anchor-adapter.example/v1/anchors'
+$env:AQUA_ISSUER_ED25519_PRIVATE_KEY_PEM_BASE64='<base64-encoded-issuer-private-key>'
+$env:AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM_BASE64='<base64-encoded-issuer-public-key>'
+$env:AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM_BASE64='<base64-encoded-attester-private-key>'
+$env:AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM_BASE64='<base64-encoded-attester-public-key>'
+$env:MIDNIGHT_ANCHOR_MODE='midnight-preprod'
+$env:AQUA_MIDNIGHT_WORKER_DIR='C:\secure\aqua-reserve\backend\midnight'
 # When the approved Compact toolchain runs in Ubuntu WSL rather than Windows:
 $env:AQUA_COMPACT_CHECK_COMMAND='wsl.exe -d Ubuntu -u aniket -- bash -lc "compact compile --help"'
 npm run build
@@ -46,11 +47,19 @@ The AWS role needs `rds-db:connect`; the database principal needs the `rds_iam` 
 
 ## 2. Contract release gate
 
-Compile `contracts/aqua-reserve-snapshot.compact` with the network-pinned official Compact toolchain. The current Phase 1 source declares Compact language `0.22`; it compiles with Compact compiler `0.30.0` using `compact compile +0.30.0 <source> <output-directory>`. Deploy using an issuer-controlled funded wallet, then persist a release manifest in the deployment secret store containing:
+Copy `midnight/.env.example` to the ignored `midnight/.env` and set the wallet mnemonic or seed, the issuer and attester authorisation secrets, and an encrypted private-state password. Start the local proof server with `npm --prefix midnight run proof:up`, then compile with `npm --prefix midnight run compile:contract`. The API owns one persistent local Midnight lifecycle worker; it keeps the wallet warm and serializes deploy, attest, and revoke operations.
+
+The authorization secrets remain runtime-only worker environment values. The encrypted Midnight private-state store retains the coverage witnesses and commitment openings required for later proof calls, but not issuer/attester authorization secrets. Keep deployment, attestation, and revocation operations in separately scoped runtime environments when moving beyond the Phase 1 demo roles.
+
+The worker also writes encrypted, ignored wallet-sync checkpoints under `midnight/.aqua-midnight-state/`. They are encrypted with `AQUA_MIDNIGHT_PRIVATE_STATE_PASSWORD` and are required to resume a long first Preprod sync after an interruption. Do not commit, delete, or overwrite a checkpoint merely because it cannot be decrypted: first verify that the configured password is the original value.
+
+For the single synthetic release flow, run `npm run deploy:phase1:preprod` from `backend/`. It refuses to use the in-memory repository, retries wallet readiness only, then creates and attests exactly one demo snapshot. It does not retry a deployment or attestation submission after the worker reports an error. API standard output and errors are captured in ignored `.runtime/api-preprod-live.out.log` and `.runtime/api-preprod-live.err.log` for reconciliation.
+
+Persist a release manifest in the deployment secret store containing:
 
 - source hash and compiler version;
-- Midnight network and contract address;
-- deploy transaction ID and block height;
+- Midnight network and each snapshot contract address;
+- deploy, attest, and revoke transaction IDs and block heights;
 - issuer/attester authorisation commitment fingerprints;
 - deployment timestamp and operator approval.
 
@@ -59,13 +68,13 @@ Never place wallet seeds, private evidence, customer data, receipts, or proving 
 ## 3. Web release configuration
 
 ```powershell
-Set-Location web
+Set-Location ..\frontend
 $env:NEXT_PUBLIC_AQUA_API_URL='https://your-api-domain.example'
 npm run build
 npm start
 ```
 
-Deploy the API and web app as separate services. Allow only the configured web origin in API CORS. The API/prover service and the anchor adapter must stay private; the browser only calls public endpoints or a customer-authenticated verification endpoint.
+Deploy the API and documentation/web app as separate services. Allow only the configured web origin in API CORS. The API/prover service and direct Midnight worker must stay private; the browser only calls public endpoints or a customer-authenticated verification endpoint.
 
 ## 4. Release proof
 

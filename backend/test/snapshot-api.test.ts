@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createPublicKey, verify as verifySignature } from "node:crypto";
+import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
 import { loadConfig } from "../src/config.js";
 import { canonicalJson } from "../src/crypto/hash.js";
 import { verifyReceipt } from "../src/crypto/merkle.js";
 import { buildApp } from "../src/http/app.js";
 import { InMemorySnapshotRepository } from "../src/persistence/snapshot-repository.js";
-import { DevelopmentAnchorService } from "../src/services/anchor-service.js";
+import { DevelopmentAnchorService, lifecycleCommitment, type AnchorService } from "../src/services/anchor-service.js";
 
 let idempotencySequence = 0;
 const issuerHeaders = {
@@ -57,6 +57,143 @@ afterEach(async () => {
 });
 
 describe("Aqua Reserve Phase 1 API", () => {
+  it("uses the direct lifecycle for deployment, attestation, revocation, and public state", async () => {
+    const calls: string[] = [];
+    let deployedPayload: Parameters<AnchorService["deploy"]>[0] | undefined;
+    const direct: AnchorService = {
+      prepare: (payload) => ({
+        mode: "MIDNIGHT_PREPROD",
+        status: "PENDING",
+        contractAddress: null,
+        commitment: lifecycleCommitment(payload),
+        transactionId: null,
+        recordedAt: "2026-08-09T00:00:00.000Z",
+        failure: null,
+        proofCommitments: null,
+      }),
+      deploy: async (payload) => {
+        calls.push("deploy");
+        deployedPayload = payload;
+        return {
+          mode: "MIDNIGHT_PREPROD",
+          status: "CONFIRMED",
+          contractAddress: "midnight-contract-abc",
+          commitment: lifecycleCommitment(payload),
+          transactionId: "deploy-tx-123",
+          recordedAt: "2026-08-09T00:00:01.000Z",
+          failure: null,
+          proofCommitments: {
+            liabilityEvidenceCommitment: "d".repeat(64),
+            reserveTotalCommitment: "e".repeat(64),
+          },
+        };
+      },
+      attest: async () => {
+        calls.push("attest");
+        return { transactionId: "attest-tx-123", recordedAt: "2026-08-09T00:00:02.000Z" };
+      },
+      revoke: async () => {
+        calls.push("revoke");
+        return { transactionId: "revoke-tx-123", recordedAt: "2026-08-09T00:00:03.000Z" };
+      },
+      read: async () => {
+        calls.push("read");
+        if (!deployedPayload) {
+          throw new Error("The test lifecycle was not deployed.");
+        }
+        return {
+          contractAddress: "midnight-contract-abc",
+          status: "REVOKED",
+          snapshotIdentifier: createHash("sha256")
+            .update(`aqua:snapshot-id:v1|${deployedPayload.snapshotId}`)
+            .digest("hex"),
+          scopeManifestHash: deployedPayload.scopeManifestHash,
+          liabilityCommitment: deployedPayload.liabilityCommitment,
+          membershipRoot: deployedPayload.membershipRoot,
+          reserveEvidenceCommitment: deployedPayload.reserveEvidenceCommitment,
+          coverageEvidenceCommitment: deployedPayload.coverageEvidenceCommitment,
+          liabilityEvidenceCommitment: "d".repeat(64),
+          reserveTotalCommitment: "e".repeat(64),
+          expiresAt: deployedPayload.expiresAt,
+          attestedAt: "2026-08-09T00:00:02.000Z",
+          revocationReasonHash: "a".repeat(64),
+        };
+      },
+    };
+    const config = loadConfig("test");
+    const app = await buildApp({ config, repository: new InMemorySnapshotRepository(), anchorService: direct });
+    apps.push(app);
+    const created = await app.inject({ method: "POST", url: "/v1/snapshots", headers: issuerHeaders, payload: snapshotBody() });
+    const snapshotId = created.json<{ snapshot: { id: string; anchor: { contractAddress: string } } }>().snapshot.id;
+    expect(created.json<{ snapshot: { anchor: { contractAddress: string } } }>().snapshot.anchor.contractAddress).toBe("midnight-contract-abc");
+    await app.inject({ method: "POST", url: `/v1/snapshots/${snapshotId}/attest`, headers: attesterHeaders });
+    await app.inject({
+      method: "POST",
+      url: `/v1/snapshots/${snapshotId}/revoke`,
+      headers: issuerHeaders,
+      payload: { reason: "Synthetic reserve evidence was intentionally replaced for this lifecycle test." },
+    });
+    const publicView = await app.inject({ method: "GET", url: `/v1/public/snapshots/${snapshotId}` });
+    expect(publicView.statusCode).toBe(200);
+    expect(publicView.json<{ snapshot: { status: string } }>().snapshot.status).toBe("REVOKED");
+    expect(calls).toEqual(["deploy", "attest", "revoke", "read"]);
+  });
+
+  it("claims a direct deployment before the chain call so retries cannot deploy twice", async () => {
+    let releaseDeployment: (() => void) | undefined;
+    const deploymentStarted = new Promise<void>((resolve) => {
+      releaseDeployment = resolve;
+    });
+    let deploymentCount = 0;
+    const direct: AnchorService = {
+      prepare: (payload) => ({
+        mode: "MIDNIGHT_PREPROD",
+        status: "PENDING",
+        contractAddress: null,
+        commitment: lifecycleCommitment(payload),
+        transactionId: null,
+        recordedAt: "2026-08-09T00:00:00.000Z",
+        failure: null,
+        proofCommitments: null,
+      }),
+      deploy: async (payload) => {
+        deploymentCount += 1;
+        await deploymentStarted;
+        return {
+          mode: "MIDNIGHT_PREPROD",
+          status: "CONFIRMED",
+          contractAddress: "midnight-contract-race-safe",
+          commitment: lifecycleCommitment(payload),
+          transactionId: "deploy-tx-race-safe",
+          recordedAt: "2026-08-09T00:00:01.000Z",
+          failure: null,
+          proofCommitments: {
+            liabilityEvidenceCommitment: "d".repeat(64),
+            reserveTotalCommitment: "e".repeat(64),
+          },
+        };
+      },
+      attest: async () => ({ transactionId: "attest-tx", recordedAt: "2026-08-09T00:00:02.000Z" }),
+      revoke: async () => ({ transactionId: "revoke-tx", recordedAt: "2026-08-09T00:00:03.000Z" }),
+      read: async () => { throw new Error("Not needed for this race test"); },
+    };
+    const config = loadConfig("test");
+    const app = await buildApp({ config, repository: new InMemorySnapshotRepository(), anchorService: direct });
+    apps.push(app);
+    const headers = { authorization: "Bearer issuer-demo-token", "idempotency-key": "deployment-race-key-0001" };
+
+    const first = app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() });
+    while (deploymentCount === 0) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    const retry = await app.inject({ method: "POST", url: "/v1/snapshots", headers, payload: snapshotBody() });
+    expect(retry.statusCode).toBe(409);
+    expect(deploymentCount).toBe(1);
+
+    releaseDeployment?.();
+    expect((await first).statusCode).toBe(201);
+  });
+
   it("permits only the configured web application origin", async () => {
     const app = await makeApp();
     const preflight = await app.inject({

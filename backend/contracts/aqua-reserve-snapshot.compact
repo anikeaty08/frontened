@@ -19,8 +19,11 @@ export ledger issuerAuthorizationCommitment: Bytes<32>;
 export ledger attesterAuthorizationCommitment: Bytes<32>;
 export ledger scopeManifestHash: Bytes<32>;
 export ledger liabilityRoot: Bytes<32>;
+export ledger membershipRoot: Bytes<32>;
 export ledger reserveEvidenceCommitment: Bytes<32>;
 export ledger coverageEvidenceCommitment: Bytes<32>;
+export ledger liabilityEvidenceCommitment: Bytes<32>;
+export ledger reserveTotalCommitment: Bytes<32>;
 export ledger expiresAt: Uint<64>;
 export ledger attestedAt: Uint<64>;
 export ledger revocationReasonHash: Bytes<32>;
@@ -29,6 +32,10 @@ export ledger revocationReasonHash: Bytes<32>;
 // Their preimages are never placed in public contract state.
 witness issuerAuthorizationSecret(): Bytes<32>;
 witness attesterAuthorizationSecret(): Bytes<32>;
+witness liabilityTotal(): Uint<64>;
+witness liabilityEvidenceOpening(): Bytes<32>;
+witness reserveTotal(): Uint<64>;
+witness reserveTotalOpening(): Bytes<32>;
 
 constructor(
   initialSnapshotId: Bytes<32>,
@@ -36,8 +43,13 @@ constructor(
   initialAttesterAuthorizationCommitment: Bytes<32>,
   initialScopeManifestHash: Bytes<32>,
   initialLiabilityRoot: Bytes<32>,
+  initialMembershipRoot: Bytes<32>,
   initialReserveEvidenceCommitment: Bytes<32>,
   initialCoverageEvidenceCommitment: Bytes<32>,
+  initialLiabilityTotal: Uint<64>,
+  initialLiabilityEvidenceOpening: Bytes<32>,
+  initialReserveTotal: Uint<64>,
+  initialReserveTotalOpening: Bytes<32>,
   initialExpiresAt: Uint<64>
 ) {
   snapshotId = disclose(initialSnapshotId);
@@ -45,8 +57,17 @@ constructor(
   attesterAuthorizationCommitment = disclose(initialAttesterAuthorizationCommitment);
   scopeManifestHash = disclose(initialScopeManifestHash);
   liabilityRoot = disclose(initialLiabilityRoot);
+  membershipRoot = disclose(initialMembershipRoot);
   reserveEvidenceCommitment = disclose(initialReserveEvidenceCommitment);
   coverageEvidenceCommitment = disclose(initialCoverageEvidenceCommitment);
+  liabilityEvidenceCommitment = persistentCommit<Vector<2, Bytes<32>>>(
+    [initialMembershipRoot, initialLiabilityTotal as Bytes<32>],
+    initialLiabilityEvidenceOpening
+  );
+  reserveTotalCommitment = persistentCommit<Vector<2, Bytes<32>>>(
+    [initialReserveEvidenceCommitment, initialReserveTotal as Bytes<32>],
+    initialReserveTotalOpening
+  );
   expiresAt = disclose(initialExpiresAt);
   attestedAt = disclose(0);
   revocationReasonHash = disclose(pad(32, "aqua:no-revocation:v1"));
@@ -66,9 +87,8 @@ export circuit assertIssuerAuthorised(): [] {
   );
 }
 
-export circuit attest(result: Uint<8>, attestationTime: Uint<64>): [] {
+export circuit attest(attestationTime: Uint<64>): [] {
   assert(status == 0, "Snapshot is no longer pending");
-  assert(result == 1 || result == 2, "Result must be VERIFIED or SHORTFALL");
   assert(blockTimeLt(disclose(expiresAt)), "Snapshot has expired");
   assert(
     persistentHash<Vector<2, Bytes<32>>>([
@@ -77,7 +97,17 @@ export circuit attest(result: Uint<8>, attestationTime: Uint<64>): [] {
     ]) == attesterAuthorizationCommitment,
     "Attester authorisation failed"
   );
-  status = disclose(result);
+  const committedLiabilities = persistentCommit<Vector<2, Bytes<32>>>(
+    [membershipRoot, liabilityTotal() as Bytes<32>],
+    liabilityEvidenceOpening()
+  );
+  const committedReserves = persistentCommit<Vector<2, Bytes<32>>>(
+    [reserveEvidenceCommitment, reserveTotal() as Bytes<32>],
+    reserveTotalOpening()
+  );
+  assert(committedLiabilities == liabilityEvidenceCommitment, "Liability evidence does not match its commitment");
+  assert(committedReserves == reserveTotalCommitment, "Reserve evidence does not match its commitment");
+  status = disclose(reserveTotal() >= liabilityTotal() ? 1 : 2);
   attestedAt = disclose(attestationTime);
 }
 

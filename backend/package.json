@@ -7,14 +7,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --env-file=.env src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/src/server.js",
+    "start": "node --env-file=.env dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "tsc -p tsconfig.json --noEmit",
     "preflight:phase1": "node scripts/phase1-preflight.mjs",
-    "demo:phase1": "tsx src/demo/phase1.ts"
+    "demo:phase1": "tsx src/demo/phase1.ts",
+    "deploy:phase1:preprod": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy-phase1-preprod.ps1"
   },
   "dependencies": {
     "@aws-sdk/rds-signer": "^3.1106.0",

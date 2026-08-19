@@ -5,7 +5,8 @@ const strict = process.argv.includes("--production");
 const requiredFiles = [
   "contracts/aqua-reserve-snapshot.compact",
   "contracts/README.md",
-  "web/package.json",
+  "../frontend/package.json",
+  "midnight/package.json",
   "DEPLOYMENT.md",
 ];
 const requiredProductionEnvironment = [
@@ -20,26 +21,29 @@ const requiredProductionEnvironment = [
   "AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM",
   "AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM",
   "AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM",
-  "MIDNIGHT_CONTRACT_ADDRESS",
-  "MIDNIGHT_ANCHOR_SUBMIT_URL",
+  "AQUA_MIDNIGHT_WORKER_DIR",
 ];
 
 const checks = requiredFiles.map((file) => ({ name: `required file: ${file}`, passed: existsSync(file) }));
 const compactCheckCommand = process.env.AQUA_COMPACT_CHECK_COMMAND?.trim();
+const defaultCompactCheckCommand = process.platform === "win32"
+  ? 'wsl.exe -d Ubuntu -u aniket -- bash -lc "compact --version"'
+  : `${process.env.COMPACT_BIN ?? "compact"} --version`;
 const compactc = compactCheckCommand
   ? spawnSync(compactCheckCommand, { encoding: "utf8", shell: true })
-  : spawnSync(process.env.COMPACTC_BIN ?? "compactc", ["--version"], { encoding: "utf8", shell: false });
+  : spawnSync(defaultCompactCheckCommand, { encoding: "utf8", shell: true });
 checks.push({
   name: compactCheckCommand
     ? "Midnight Compact compiler (AQUA_COMPACT_CHECK_COMMAND)"
-    : "Midnight Compact compiler (compactc)",
+    : "Midnight Compact compiler used by the worker",
   passed: compactc.status === 0,
 });
 
 if (strict) {
   for (const name of requiredProductionEnvironment) checks.push({ name: `production environment: ${name}`, passed: Boolean(process.env[name]) });
   checks.push({ name: "AQUA_RDS_IAM_AUTH enabled", passed: process.env.AQUA_RDS_IAM_AUTH === "true" });
-  checks.push({ name: "MIDNIGHT_ANCHOR_MODE configured", passed: process.env.MIDNIGHT_ANCHOR_MODE === "midnight-testnet" });
+  checks.push({ name: "MIDNIGHT_ANCHOR_MODE configured", passed: process.env.MIDNIGHT_ANCHOR_MODE === "midnight-preprod" });
+  checks.push({ name: "Midnight worker environment file", passed: existsSync("midnight/.env") });
 }
 
 for (const check of checks) console.log(`${check.passed ? "PASS" : "FAIL"}  ${check.name}`);

@@ -1,12 +1,17 @@
 import pg from "pg";
 import { Signer } from "@aws-sdk/rds-signer";
 import { readFileSync } from "node:fs";
+import { rootCertificates } from "node:tls";
 import type { RdsIamConfig } from "../config.js";
 import type { EncryptedReceipt, ReserveSnapshot, SnapshotEvent } from "../domain/types.js";
-import type { SnapshotRepository } from "./snapshot-repository.js";
+import { SnapshotRevisionConflictError, type SnapshotRepository } from "./snapshot-repository.js";
 import { runMigrations } from "./migrations.js";
 
 const { Pool } = pg;
+const normalizeSnapshot = (snapshot: ReserveSnapshot): ReserveSnapshot => ({
+  ...snapshot,
+  revision: Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 ? snapshot.revision : 0,
+});
 
 export class PostgresSnapshotRepository implements SnapshotRepository {
   private readonly pool: pg.Pool;
@@ -23,7 +28,10 @@ export class PostgresSnapshotRepository implements SnapshotRepository {
       region: config.region,
     });
     const ssl = config.caCertificatePath
-      ? { ca: readFileSync(config.caCertificatePath, "utf8"), rejectUnauthorized: true }
+      // Supplying `ca` replaces Node's default roots. Retain them as well as the
+      // regional RDS bundle because an Aurora endpoint can present an Amazon
+      // public-certificate chain rather than an RDS G1 chain.
+      ? { ca: [...rootCertificates, readFileSync(config.caCertificatePath, "utf8")], rejectUnauthorized: true }
       : requireTlsVerification
         ? (() => {
             throw new Error("RDS_CA_CERT_PATH is required when TLS verification is enabled");
@@ -76,7 +84,7 @@ export class PostgresSnapshotRepository implements SnapshotRepository {
 
   public async findById(snapshotId: string): Promise<ReserveSnapshot | null> {
     const result = await this.pool.query<{ snapshot: ReserveSnapshot }>("SELECT snapshot FROM aqua_snapshots WHERE id = $1", [snapshotId]);
-    return result.rows[0]?.snapshot ?? null;
+    return result.rows[0] ? normalizeSnapshot(result.rows[0].snapshot) : null;
   }
 
   public async findByIdempotencyKey(idempotencyKeyDigest: string): Promise<ReserveSnapshot | null> {
@@ -84,7 +92,7 @@ export class PostgresSnapshotRepository implements SnapshotRepository {
       "SELECT snapshot FROM aqua_snapshots WHERE idempotency_key = $1",
       [idempotencyKeyDigest],
     );
-    return result.rows[0]?.snapshot ?? null;
+    return result.rows[0] ? normalizeSnapshot(result.rows[0].snapshot) : null;
   }
 
   public async getReceipt(snapshotId: string, customerReference: string): Promise<EncryptedReceipt | null> {
@@ -95,16 +103,25 @@ export class PostgresSnapshotRepository implements SnapshotRepository {
     return result.rows[0]?.encrypted_receipt ?? null;
   }
 
-  public async update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<void> {
+  public async update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<ReserveSnapshot> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const result = await client.query("UPDATE aqua_snapshots SET snapshot = $2::jsonb WHERE id = $1", [snapshot.id, JSON.stringify(snapshot)]);
+      const next = { ...snapshot, revision: snapshot.revision + 1 };
+      const result = await client.query(
+        "UPDATE aqua_snapshots SET snapshot = $3::jsonb WHERE id = $1 AND COALESCE((snapshot->>'revision')::integer, 0) = $2",
+        [snapshot.id, snapshot.revision, JSON.stringify(next)],
+      );
       if (result.rowCount !== 1) throw new Error(`Snapshot ${snapshot.id} does not exist`);
       await this.insertEvent(client, event);
       await client.query("COMMIT");
+      return next;
     } catch (error) {
       await client.query("ROLLBACK");
+      if (error instanceof Error && error.message === `Snapshot ${snapshot.id} does not exist`) {
+        const existing = await this.findById(snapshot.id);
+        if (existing) throw new SnapshotRevisionConflictError(snapshot.id);
+      }
       throw error;
     } finally {
       client.release();

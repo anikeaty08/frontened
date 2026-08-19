@@ -2,18 +2,28 @@ import type { EncryptedReceipt, ReserveSnapshot, SnapshotEvent, StoredSnapshot }
 
 export type CreateSnapshotResult = { created: true } | { created: false; snapshot: ReserveSnapshot };
 
+export class SnapshotRevisionConflictError extends Error {
+  public constructor(snapshotId: string) {
+    super(`Snapshot ${snapshotId} was updated concurrently`);
+  }
+}
+
 export interface SnapshotRepository {
   create(snapshot: ReserveSnapshot, receipts: Map<string, EncryptedReceipt>, event: SnapshotEvent): Promise<CreateSnapshotResult>;
   findById(snapshotId: string): Promise<ReserveSnapshot | null>;
   findByIdempotencyKey(idempotencyKeyDigest: string): Promise<ReserveSnapshot | null>;
   getReceipt(snapshotId: string, customerReference: string): Promise<EncryptedReceipt | null>;
-  update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<void>;
+  update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<ReserveSnapshot>;
   listEvents(snapshotId: string): Promise<SnapshotEvent[]>;
 }
 
 const cloneSnapshot = (snapshot: ReserveSnapshot): ReserveSnapshot => structuredClone(snapshot);
 const cloneReceipt = (receipt: EncryptedReceipt): EncryptedReceipt => structuredClone(receipt);
 const cloneEvent = (event: SnapshotEvent): SnapshotEvent => structuredClone(event);
+const normalizeSnapshot = (snapshot: ReserveSnapshot): ReserveSnapshot => ({
+  ...snapshot,
+  revision: Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 ? snapshot.revision : 0,
+});
 
 export class InMemorySnapshotRepository implements SnapshotRepository {
   private readonly snapshots = new Map<string, StoredSnapshot>();
@@ -40,7 +50,7 @@ export class InMemorySnapshotRepository implements SnapshotRepository {
 
   public async findById(snapshotId: string): Promise<ReserveSnapshot | null> {
     const stored = this.snapshots.get(snapshotId);
-    return stored ? cloneSnapshot(stored.snapshot) : null;
+    return stored ? normalizeSnapshot(cloneSnapshot(stored.snapshot)) : null;
   }
 
   public async findByIdempotencyKey(idempotencyKeyDigest: string): Promise<ReserveSnapshot | null> {
@@ -53,13 +63,18 @@ export class InMemorySnapshotRepository implements SnapshotRepository {
     return receipt ? cloneReceipt(receipt) : null;
   }
 
-  public async update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<void> {
+  public async update(snapshot: ReserveSnapshot, event: SnapshotEvent): Promise<ReserveSnapshot> {
     const stored = this.snapshots.get(snapshot.id);
     if (!stored) {
       throw new Error(`Snapshot ${snapshot.id} does not exist`);
     }
-    stored.snapshot = cloneSnapshot(snapshot);
+    if (normalizeSnapshot(stored.snapshot).revision !== snapshot.revision) {
+      throw new SnapshotRevisionConflictError(snapshot.id);
+    }
+    const next = { ...snapshot, revision: snapshot.revision + 1 };
+    stored.snapshot = cloneSnapshot(next);
     stored.events.push(cloneEvent(event));
+    return cloneSnapshot(next);
   }
 
   public async listEvents(snapshotId: string): Promise<SnapshotEvent[]> {

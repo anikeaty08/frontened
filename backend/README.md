@@ -35,7 +35,7 @@ npm run dev
 Production requires `RDS_CA_CERT_PATH` so TLS is verified. The backend never prints an IAM token or stores it in configuration.
 The AWS execution identity needs `rds-db:connect` permission for the database user, and that PostgreSQL user must have the `rds_iam` role granted. [AWS RDS IAM authentication guidance](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.html)
 
-For a real Midnight record, production also requires `MIDNIGHT_CONTRACT_ADDRESS` and `MIDNIGHT_ANCHOR_SUBMIT_URL`. The private adapter receives commitments only and must return that same configured contract address with its transaction ID; a mismatched response is rejected.
+For a real Midnight record, production uses `MIDNIGHT_ANCHOR_MODE=midnight-preprod` and the direct worker in `midnight/`. Each snapshot deploys its own Compact contract; the API never relies on a static contract address or generic anchor relay.
 
 ## Development roles
 
@@ -66,7 +66,7 @@ Snapshot publication requires an `Idempotency-Key` header (16–128 URL-safe cha
 
 - `POST /v1/snapshots` — issuer creates a private snapshot and encrypted customer receipts.
 - `POST /v1/snapshots/:snapshotId/attest` — assigned attester determines `VERIFIED` or `SHORTFALL`.
-- `POST /v1/snapshots/:snapshotId/revoke` — issuer or assigned attester revokes without deleting history.
+- `POST /v1/snapshots/:snapshotId/revoke` — issuer revokes without deleting history.
 - `GET /v1/public/snapshots/:snapshotId` — public, non-sensitive snapshot status.
 - `GET /v1/customer/snapshots/:snapshotId/verification` — authenticated customer’s private inclusion receipt only.
 
@@ -79,4 +79,6 @@ Snapshot publication requires an `Idempotency-Key` header (16–128 URL-safe cha
 - Amounts are integer base-unit strings; floating point is never used.
 - Publication stores only keyed idempotency/request digests; it never stores the raw retry key or request body.
 - PostgreSQL schema changes are versioned, transactionally applied, and startup-serialized with an advisory lock.
-- A verified result is a scoped, point-in-time statement—not an audit or general safety claim.
+- Snapshot updates use an optimistic revision and a durable `DEPLOYING` claim, preventing concurrent retries from creating duplicate Midnight contracts.
+- Midnight issuer/attester authorization secrets are read only from the active worker environment; encrypted private state retains coverage witnesses and commitment openings, not those authorization secrets.
+- The Compact attestation circuit proves a comparison of committed Phase 1 totals; it does not establish that the external reserve evidence or customer source system is complete. A verified result is a scoped, point-in-time statement—not an audit or general safety claim.

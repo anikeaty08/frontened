@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const baseUrl = process.env.AQUA_BASE_URL ?? "http://127.0.0.1:3000";
 const issuerToken = process.env.AQUA_ISSUER_TOKEN ?? "issuer-demo-token";
 const attesterToken = process.env.AQUA_ATTESTER_TOKEN ?? "attester-demo-token";
@@ -41,4 +43,3 @@ const attestationResponse = await fetch(`${baseUrl}/v1/snapshots/${created.snaps
 });
 if (!attestationResponse.ok) throw new Error(`Snapshot attestation failed: ${await attestationResponse.text()}`);
 console.log(JSON.stringify(await attestationResponse.json(), null, 2));
-import { randomUUID } from "node:crypto";

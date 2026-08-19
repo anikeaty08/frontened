@@ -48,11 +48,33 @@ export interface EncryptedReceipt {
 }
 
 export interface AnchorRecord {
-  mode: "DEVELOPMENT" | "MIDNIGHT_TESTNET";
+  mode: "DEVELOPMENT" | "MIDNIGHT_PREPROD";
+  status: "PENDING" | "DEPLOYING" | "CONFIRMED" | "FAILED";
   contractAddress: string | null;
   commitment: string;
   transactionId: string | null;
   recordedAt: string;
+  failure: string | null;
+  proofCommitments: {
+    liabilityEvidenceCommitment: string;
+    reserveTotalCommitment: string;
+  } | null;
+}
+
+export interface ChainState {
+  contractAddress: string;
+  status: Extract<SnapshotStatus, "PENDING_ATTESTATION" | "VERIFIED" | "SHORTFALL" | "REVOKED">;
+  snapshotIdentifier: string;
+  scopeManifestHash: string;
+  liabilityCommitment: string;
+  membershipRoot: string;
+  reserveEvidenceCommitment: string;
+  coverageEvidenceCommitment: string;
+  liabilityEvidenceCommitment: string;
+  reserveTotalCommitment: string;
+  expiresAt: string;
+  attestedAt: string;
+  revocationReasonHash: string;
 }
 
 export interface SnapshotSignatures {
@@ -62,6 +84,8 @@ export interface SnapshotSignatures {
 
 export interface ReserveSnapshot {
   id: string;
+  /** Monotonic optimistic-concurrency revision; omitted from public responses. */
+  revision: number;
   /** Internal-only HMAC digests. They are intentionally omitted from PublicSnapshot. */
   idempotencyKeyDigest: string;
   requestFingerprint: string;
@@ -122,7 +146,7 @@ export interface PublicSnapshot {
 export interface SnapshotEvent {
   id: string;
   snapshotId: string;
-  type: "CREATED" | "ATTESTED" | "REVOKED";
+  type: "CREATED" | "DEPLOYMENT_STARTED" | "DEPLOYED" | "DEPLOYMENT_UNCERTAIN" | "ATTESTED" | "REVOKED";
   actorId: string;
   occurredAt: string;
   metadata: Record<string, string>;

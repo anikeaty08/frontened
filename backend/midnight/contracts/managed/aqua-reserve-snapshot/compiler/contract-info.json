@@ -21,13 +21,6 @@
       "proof": true,
       "arguments": [
         {
-          "name": "result",
-          "type": {
-            "type-name": "Uint",
-            "maxval": 255
-          }
-        },
-        {
           "name": "attestationTime",
           "type": {
             "type-name": "Uint",
@@ -83,6 +76,42 @@
     },
     {
       "name": "attesterAuthorizationSecret",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "liabilityTotal",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "liabilityEvidenceOpening",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "reserveTotal",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Uint",
+        "maxval": 18446744073709551615
+      }
+    },
+    {
+      "name": "reserveTotalOpening",
       "arguments": [
       ],
       "result type": {
