@@ -2,31 +2,33 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
+const mono = JetBrains_Mono({ variable: "--font-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Cliste — Advanced Android Threat Detection",
-  description: "Our multi-agent security system performs static analysis, dynamic execution, and sandbox monitoring to uncover malicious behavior, detect C2 communication, and extract forensic evidence automatically.",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001",
+  ),
+  title: {
+    default: "AquaReserve — Private reserve assurance",
+    template: "%s | AquaReserve",
+  },
+  description:
+    "Verify scoped, time-bound reserve coverage without exposing customer balances or reserve-wallet structure.",
+  icons: { icon: "/aquareserve-icon.png", apple: "/aquareserve-icon.png" },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} scroll-smooth`}>
-      <body className="selection:bg-[#0052FF] selection:text-white font-sans font-light antialiased">
-        {children}
-      </body>
+    <html
+      lang="en"
+      className={`${inter.variable} ${mono.variable}`}
+      data-theme="dark"
+      suppressHydrationWarning
+    >
+      <body>{children}</body>
     </html>
   );
 }

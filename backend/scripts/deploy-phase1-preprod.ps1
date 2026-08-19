@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
-# This runner has one intentional side effect: after readiness is proven it
-# publishes and attests exactly one synthetic Phase 1 snapshot. Wallet-sync
-# retries occur before deployment only; a failed deployment is never retried.
+# This runner has one intentional side effect: it publishes and attests exactly
+# one synthetic Phase 1 snapshot. Wallet sync happens once inside the API-owned
+# warm lifecycle worker so the deployment does not pay for a separate pre-sync.
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $workerRoot = Join-Path $projectRoot 'midnight'
 $runtimeDirectory = Join-Path $projectRoot '.runtime'
@@ -18,20 +18,7 @@ if ($proofReady.StatusCode -ne 200) { throw 'The Midnight proof server is not re
 $env:MIDNIGHT_SYNC_TIMEOUT_MS = if ($env:MIDNIGHT_SYNC_TIMEOUT_MS) { $env:MIDNIGHT_SYNC_TIMEOUT_MS } else { '28800000' }
 $env:MIDNIGHT_ANCHOR_MODE = 'midnight-preprod'
 
-$ready = $false
-for ($attempt = 1; $attempt -le 24; $attempt++) {
-  Write-Host "[preprod] wallet readiness attempt $attempt of 24"
-  Push-Location $workerRoot
-  try {
-    npm run lifecycle -- status
-    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
-  } finally {
-    Pop-Location
-  }
-  Write-Warning '[preprod] wallet sync interrupted; checkpoint saved. Retrying in five seconds.'
-  Start-Sleep -Seconds 5
-}
-if (-not $ready) { throw 'Wallet did not synchronize within the bounded readiness window; no contract was submitted.' }
+Write-Host '[preprod] wallet readiness will be proven by the API-owned warm lifecycle worker during the first deployment call'
 
 $occupied = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
 if ($occupied) { throw 'Port 3000 is already in use. Stop the existing API or run the demo against that known Preprod API instance.' }

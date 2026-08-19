@@ -1,91 +1,85 @@
 # Aqua Reserve Phase 1 deployment runbook
 
-Deployment is a controlled release, not an `npm run` side effect: it requires a Midnight wallet/network configuration, a local Docker proof server, and AWS identity that are not present in this workspace.
+Phase 1 has been exercised end-to-end on Midnight Preprod with RDS persistence. A production release remains a separate operator-controlled deployment with production identities, domains, secrets, and monitoring.
 
-## 0. Operator identity in Ubuntu WSL
+## 1. Release environment
 
-The release operator must authenticate the AWS CLI before an RDS IAM token can be minted. Run this interactively in Ubuntu WSL; do not place AWS credentials or session tokens in this repository:
+Use an execution identity authorized for `rds-db:connect`. The PostgreSQL principal must have `rds_iam`; the API mints short-lived IAM tokens through the AWS SDK. Never save an IAM token in `.env`.
 
-```bash
-aws login
-aws sts get-caller-identity
+Required production settings:
+
+```text
+NODE_ENV=production
+AQUA_WEB_ORIGIN=https://approved-web-origin.example
+AQUA_DEMO_AUTH=false
+AQUA_RDS_IAM_AUTH=true
+RDSHOST=<Aurora-or-RDS-host>
+RDS_PORT=5432
+RDS_DATABASE=<database>
+RDS_USERNAME=<IAM-enabled-user>
+AWS_REGION=<region>
+RDS_CA_CERT_PATH=<absolute-path-to-trusted-RDS-CA-bundle>
+AQUA_MASTER_KEY_BASE64=<base64-encoded-32-byte-key>
+AQUA_CUSTOMER_REFERENCE_KEY_BASE64=<base64-encoded-32-byte-key>
+AQUA_AUTH_TOKENS_JSON=<strong-role-bound-token-map>
+AQUA_ISSUER_ED25519_PRIVATE_KEY_PEM_BASE64=<secret>
+AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM_BASE64=<public-key>
+AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM_BASE64=<secret>
+AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM_BASE64=<public-key>
+MIDNIGHT_ANCHOR_MODE=midnight-preprod
+AQUA_MIDNIGHT_WORKER_DIR=<absolute-path-to-backend/midnight>
+MIDNIGHT_WALLET_MNEMONIC=<secret>  # or MIDNIGHT_WALLET_SEED, never both
+AQUA_MIDNIGHT_ISSUER_AUTH_SECRET_HEX=<secret>
+AQUA_MIDNIGHT_ATTESTER_AUTH_SECRET_HEX=<secret>
+AQUA_MIDNIGHT_PRIVATE_STATE_PASSWORD=<secret>
 ```
 
-The identity must be authorised for `rds-db:connect` to the configured database principal. The current AWS CLI installation is independent of Docker.
+`AQUA_AUTH_TOKENS_JSON` is an object keyed by unguessable tokens of at least 32 characters. It must contain distinct issuer, attester, and customer principals. Use a real identity provider or secret manager before a public production launch; the token map is the locked Phase 1 authentication boundary.
 
-The API process must use the same AWS credential provider as the CLI. An `export` in one open WSL terminal is not inherited by a Windows Node process. Either run the API under WSL with a Linux Node runtime and its AWS profile, or install/authenticate the AWS CLI/profile used by the Windows service account.
+The previously shared wallet mnemonic must not be used for a production release. Rotate it and all dependent authorization material in a controlled wallet with funded Preprod/mainnet credentials.
 
-## 1. Backend release configuration
+## 2. Toolchain and proof server
 
-Set persistent release secrets in the deployment environment only. The same requirements apply to a synthetic Midnight Preprod release even when `NODE_ENV=development` is used for the demo roles:
+The locked toolchain is Compact CLI wrapper 0.5.1, compiler 0.31.1, Compact language 0.23, `compact-runtime` 0.16.0, `onchain-runtime-v3` 3.0.0, and proof server 8.1.0. The proof server binds only to `127.0.0.1:6300`.
 
 ```powershell
-$env:NODE_ENV='production'
-$env:AQUA_WEB_ORIGIN='https://your-web-domain.example'
-$env:AQUA_RDS_IAM_AUTH='true'
-$env:RDSHOST='database-1.cluster-cz6kc44mkffy.ap-south-1.rds.amazonaws.com'
-$env:RDS_DATABASE='postgres'
-$env:RDS_USERNAME='postgres'
-$env:AWS_REGION='ap-south-1'
-$env:RDS_CA_CERT_PATH='C:\secure\rds-ca-bundle.pem'
-$env:AQUA_MASTER_KEY_BASE64='<32-byte-base64-key>'
-$env:AQUA_CUSTOMER_REFERENCE_KEY_BASE64='<32-byte-base64-key>'
-$env:AQUA_AUTH_TOKENS_JSON='<role-bound-principals-json>'
-$env:AQUA_ISSUER_ED25519_PRIVATE_KEY_PEM_BASE64='<base64-encoded-issuer-private-key>'
-$env:AQUA_ISSUER_ED25519_PUBLIC_KEY_PEM_BASE64='<base64-encoded-issuer-public-key>'
-$env:AQUA_ATTESTER_ED25519_PRIVATE_KEY_PEM_BASE64='<base64-encoded-attester-private-key>'
-$env:AQUA_ATTESTER_ED25519_PUBLIC_KEY_PEM_BASE64='<base64-encoded-attester-public-key>'
-$env:MIDNIGHT_ANCHOR_MODE='midnight-preprod'
-$env:AQUA_MIDNIGHT_WORKER_DIR='C:\secure\aqua-reserve\backend\midnight'
-# When the approved Compact toolchain runs in Ubuntu WSL rather than Windows:
-$env:AQUA_COMPACT_CHECK_COMMAND='wsl.exe -d Ubuntu -u aniket -- bash -lc "compact compile --help"'
+npm --prefix midnight run proof:up
+npm --prefix midnight run compile:contract
+npm --prefix midnight run check
+npm --prefix midnight test
+npm run check
+npm run build
+npm test
+npm run preflight:phase1 -- --production
+```
+
+The API owns a persistent lifecycle daemon and encrypted wallet checkpoints. Keep `midnight/.aqua-midnight-state/`, the private-state database, and its password together. Do not delete them to fix sync problems.
+
+## 3. Safe lifecycle operation
+
+- Publication requires an `Idempotency-Key`; retrying the same request returns the same snapshot.
+- `GET /v1/issuer/snapshots/by-idempotency-key` recovers a response lost after submission.
+- Deploy, attest, and revoke create durable claims before calling Midnight.
+- Never blindly retry an uncertain chain operation.
+- `POST /v1/snapshots/:snapshotId/reconcile` reads authoritative chain state and repairs the database.
+- For an addressless rejected deployment only, the issuer may send `{ "abandonDeployment": true }` after operator reconciliation. A replacement must use a new idempotency key.
+
+## 4. Service deployment
+
+Run the API and frontend as separate services. The proof server, wallet worker, database, secret material, and private receipts must remain unreachable from the browser.
+
+```powershell
 npm run build
 npm start
 ```
 
-The AWS role needs `rds-db:connect`; the database principal needs the `rds_iam` role. Do not use the 15-minute IAM database token as an environment variable—the backend mints a fresh connection token using the AWS SDK.
+Release probes:
 
-## 2. Contract release gate
+- `GET /health` proves the process is alive.
+- `GET /ready` proves database availability and reports the configured anchor mode.
 
-Copy `midnight/.env.example` to the ignored `midnight/.env` and set the wallet mnemonic or seed, the issuer and attester authorisation secrets, and an encrypted private-state password. Start the local proof server with `npm --prefix midnight run proof:up`, then compile with `npm --prefix midnight run compile:contract`. The API owns one persistent local Midnight lifecycle worker; it keeps the wallet warm and serializes deploy, attest, and revoke operations.
+## 5. Release evidence
 
-The authorization secrets remain runtime-only worker environment values. The encrypted Midnight private-state store retains the coverage witnesses and commitment openings required for later proof calls, but not issuer/attester authorization secrets. Keep deployment, attestation, and revocation operations in separately scoped runtime environments when moving beyond the Phase 1 demo roles.
+Before promoting a build, capture source digests, dependency locks, compiler/runtime versions, migration versions, transaction identifiers, block heights, contract addresses, public statuses, inclusion/omission results, and operator approval. Never include wallet credentials, private totals/openings, customer data, receipts, AWS tokens, or signing keys.
 
-The worker also writes encrypted, ignored wallet-sync checkpoints under `midnight/.aqua-midnight-state/`. They are encrypted with `AQUA_MIDNIGHT_PRIVATE_STATE_PASSWORD` and are required to resume a long first Preprod sync after an interruption. Do not commit, delete, or overwrite a checkpoint merely because it cannot be decrypted: first verify that the configured password is the original value.
-
-For the single synthetic release flow, run `npm run deploy:phase1:preprod` from `backend/`. It refuses to use the in-memory repository, retries wallet readiness only, then creates and attests exactly one demo snapshot. It does not retry a deployment or attestation submission after the worker reports an error. API standard output and errors are captured in ignored `.runtime/api-preprod-live.out.log` and `.runtime/api-preprod-live.err.log` for reconciliation.
-
-Persist a release manifest in the deployment secret store containing:
-
-- source hash and compiler version;
-- Midnight network and each snapshot contract address;
-- deploy, attest, and revoke transaction IDs and block heights;
-- issuer/attester authorisation commitment fingerprints;
-- deployment timestamp and operator approval.
-
-Never place wallet seeds, private evidence, customer data, receipts, or proving keys in this repository or the web application.
-
-## 3. Web release configuration
-
-```powershell
-Set-Location ..\frontend
-$env:NEXT_PUBLIC_AQUA_API_URL='https://your-api-domain.example'
-npm run build
-npm start
-```
-
-Deploy the API and documentation/web app as separate services. Allow only the configured web origin in API CORS. The API/prover service and direct Midnight worker must stay private; the browser only calls public endpoints or a customer-authenticated verification endpoint.
-
-## 4. Release proof
-
-Before declaring Phase 1 deployed, capture these independent evidence items:
-
-1. API `/health` response from the deployed URL.
-2. PostgreSQL migration rows and encrypted-receipt storage check.
-3. Published synthetic 25-customer snapshot ID.
-4. Customer inclusion result and omitted-customer negative result.
-5. Attester status change and public transparency URL.
-6. Midnight contract address and transaction ID, fetched from the target network.
-7. Expiry and revocation failure results.
-
-Without all seven, call the service **pre-production**, not deployed.
+The current redacted Preprod evidence is in `PHASE_1_ACCEPTANCE.md` and `PHASE_1_RELEASE_MANIFEST.md`.
