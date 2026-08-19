@@ -82,6 +82,13 @@ export interface SnapshotSignatures {
   attester: string | null;
 }
 
+export interface SnapshotLifecycleOperation {
+  kind: "ATTESTING" | "ATTEST_UNCERTAIN" | "REVOKING" | "REVOKE_UNCERTAIN";
+  actorId: string;
+  startedAt: string;
+  reason: string | null;
+}
+
 export interface ReserveSnapshot {
   id: string;
   /** Monotonic optimistic-concurrency revision; omitted from public responses. */
@@ -109,6 +116,8 @@ export interface ReserveSnapshot {
   reserveTotalBaseUnits: string;
   anchored: AnchorRecord;
   signatures: SnapshotSignatures;
+  /** Durable claim preventing concurrent or blind chain mutation retries. */
+  lifecycleOperation: SnapshotLifecycleOperation | null;
   attestedAt: string | null;
   revokedAt: string | null;
   revokedBy: string | null;
@@ -146,7 +155,19 @@ export interface PublicSnapshot {
 export interface SnapshotEvent {
   id: string;
   snapshotId: string;
-  type: "CREATED" | "DEPLOYMENT_STARTED" | "DEPLOYED" | "DEPLOYMENT_UNCERTAIN" | "ATTESTED" | "REVOKED";
+  type:
+    | "CREATED"
+    | "DEPLOYMENT_STARTED"
+    | "DEPLOYED"
+    | "DEPLOYMENT_UNCERTAIN"
+    | "DEPLOYMENT_ABANDONED"
+    | "ATTESTATION_STARTED"
+    | "ATTESTATION_UNCERTAIN"
+    | "ATTESTED"
+    | "REVOCATION_STARTED"
+    | "REVOCATION_UNCERTAIN"
+    | "REVOKED"
+    | "CHAIN_RECONCILED";
   actorId: string;
   occurredAt: string;
   metadata: Record<string, string>;

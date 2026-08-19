@@ -6,7 +6,7 @@
 //
 // A separate contract instance is deployed for each snapshot. This makes the
 // publication immutable by construction; a correction means a new deployment.
-pragma language_version 0.22;
+pragma language_version 0.23;
 import CompactStandardLibrary;
 
 // Lifecycle values. The public web app maps these values to human-readable text.

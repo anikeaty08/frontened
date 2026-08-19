@@ -5,3 +5,8 @@ coverage/
 *.log
 midnight/.env
 midnight/.aqua-midnight-state/
+midnight/.aqua-midnight-state.locked-*/
+midnight/midnight-level-db/
+.runtime/
+rds-ca-bundle.pem
+*.pem

@@ -62,15 +62,28 @@ npm run preflight:phase1 -- --production
 
 ## API
 
-Snapshot publication requires an `Idempotency-Key` header (16–128 URL-safe characters). Retrying with the same body returns the original snapshot; reusing the key with changed input is rejected.
+Lifecycle recovery endpoints:
 
-- `POST /v1/snapshots` — issuer creates a private snapshot and encrypted customer receipts.
-- `POST /v1/snapshots/:snapshotId/attest` — assigned attester determines `VERIFIED` or `SHORTFALL`.
-- `POST /v1/snapshots/:snapshotId/revoke` — issuer revokes without deleting history.
-- `GET /v1/public/snapshots/:snapshotId` — public, non-sensitive snapshot status.
-- `GET /v1/customer/snapshots/:snapshotId/verification` — authenticated customer’s private inclusion receipt only.
+- `POST /v1/snapshots/:snapshotId/reconcile` - issuer repairs uncertain state from the authoritative contract.
+- `GET /v1/issuer/snapshots/by-idempotency-key` - issuer recovers a stable publication without another deployment.
+- `GET /health` and `GET /ready` - liveness and database/anchor readiness probes.
+
+Snapshot publication requires an `Idempotency-Key` header (16-128 URL-safe characters). Retrying with the same body returns the original snapshot; reusing the key with changed input is rejected.
+
+- `GET /v1/public/snapshots` - paginated public snapshot directory.
+- `GET /v1/issuer/snapshots` - authenticated issuer's paginated snapshots.
+- `GET /v1/attester/snapshots` - authenticated attester's assigned snapshots.
+- `GET /v1/snapshots/:snapshotId/events` - authorized immutable lifecycle history.
+- `POST /v1/snapshots` - issuer creates a private snapshot and encrypted customer receipts.
+- `POST /v1/snapshots/:snapshotId/attest` - assigned attester determines `VERIFIED` or `SHORTFALL`.
+- `POST /v1/snapshots/:snapshotId/revoke` - issuer revokes without deleting history.
+- `GET /v1/public/snapshots/:snapshotId` - public, non-sensitive snapshot status.
+- `GET /v1/customer/snapshots/:snapshotId/verification` - authenticated customer's private inclusion receipt only.
 
 ## Security boundaries
+
+- Attestation and revocation use durable claims; uncertain outcomes are reconciled from chain state rather than blindly resubmitted.
+- Production responses use security headers and rate limiting; production tokens must be strong, unique, role-separated credentials.
 
 - Raw liabilities are not persisted.
 - Customer references are HMAC-derived, not stored as customer IDs.
@@ -81,4 +94,4 @@ Snapshot publication requires an `Idempotency-Key` header (16–128 URL-safe cha
 - PostgreSQL schema changes are versioned, transactionally applied, and startup-serialized with an advisory lock.
 - Snapshot updates use an optimistic revision and a durable `DEPLOYING` claim, preventing concurrent retries from creating duplicate Midnight contracts.
 - Midnight issuer/attester authorization secrets are read only from the active worker environment; encrypted private state retains coverage witnesses and commitment openings, not those authorization secrets.
-- The Compact attestation circuit proves a comparison of committed Phase 1 totals; it does not establish that the external reserve evidence or customer source system is complete. A verified result is a scoped, point-in-time statement—not an audit or general safety claim.
+- The Compact attestation circuit proves a comparison of committed Phase 1 totals; it does not establish that the external reserve evidence or customer source system is complete. A verified result is a scoped, point-in-time statement - not an audit or general safety claim.

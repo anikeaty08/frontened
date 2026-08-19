@@ -8,3 +8,5 @@
 **/.env.*
 **/*.log
 **/.aqua-midnight-state/
+**/.runtime/
+!**/.env.example

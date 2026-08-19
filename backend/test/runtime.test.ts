@@ -32,6 +32,17 @@ describe("Midnight Preprod runtime boundary", () => {
       restoreEnvironment(publicName, originalPublic);
     }
   });
+
+  it("rejects weak configured bearer tokens", () => {
+    const name = "AQUA_AUTH_TOKENS_JSON";
+    const original = process.env[name];
+    process.env[name] = JSON.stringify({ short: { id: "issuer", roles: ["ISSUER"] } });
+    try {
+      expect(() => loadConfig("test")).toThrow("at least 32 characters");
+    } finally {
+      restoreEnvironment(name, original);
+    }
+  });
 });
 
 const restoreEnvironment = (name: string, value: string | undefined): void => {
